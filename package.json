@@ -1,0 +1,68 @@
+{
+  "name": "@ubinity/node-llm",
+  "version": "1.0.0",
+  "description": "Universal LLM Routing Engine for Node.js",
+  "author": "Ubinity DX Team <dx@ubinity.tech>",
+  "license": "MPL-2.0",
+  "keywords": [
+    "llm",
+    "ai",
+    "openai",
+    "gemini",
+    "anthropic",
+    "routing",
+    "unified"
+  ],
+  "type": "commonjs",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ubinity-dx/node-llm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ubinity-dx/node-llm/issues"
+  },
+  "homepage": "https://github.com/ubinity-dx/node-llm#readme",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "types": "index.d.ts",
+  "files": [
+    "lib",
+    "index.js",
+    "index.d.ts"
+  ],
+  "peerDependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@google/genai": "^0.1.0",
+    "openai": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "openai": {
+      "optional": true
+    },
+    "@google/genai": {
+      "optional": true
+    },
+    "@anthropic-ai/sdk": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "test": "jest",
+    "prepublishOnly": "npm test"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2"
+  }
+}
