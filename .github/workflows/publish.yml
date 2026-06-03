@@ -1,0 +1,39 @@
+name: NPM Publish
+
+on:
+  # Triggers the workflow when a new release is published on GitHub
+  release:
+    types: [published]
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+    permissions:
+      # Required permission: allows reading the repository code
+      contents: read
+      # Core permission: allows generating an OIDC JWT token for NPM authentication
+      id-token: write 
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          registry-url: 'https://registry.npmjs.org'
+          
+      - name: Install Dependencies
+        run: npm ci
+        
+      - name: Run Tests
+        run: npm test
+        
+      - name: Publish to NPM (OIDC)
+        # The --provenance flag is required. It attaches build provenance attestations to the published package
+        run: npm publish --provenance
+        env:
+          # In OIDC mode, setup-node automatically intercepts this variable and replaces it with the OIDC Token.
+          # You do NOT need to configure a custom NPM token in GitHub Secrets!
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
