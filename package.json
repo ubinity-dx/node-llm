@@ -17,7 +17,7 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "https://github.com/ubinity-dx/node-llm.git"
+    "url": "git+https://github.com/ubinity-dx/node-llm.git"
   },
   "bugs": {
     "url": "https://github.com/ubinity-dx/node-llm/issues"
@@ -64,5 +64,9 @@
   },
   "devDependencies": {
     "jest": "^30.4.2"
+  },
+  "directories": {
+    "lib": "lib",
+    "test": "tests"
   }
 }
