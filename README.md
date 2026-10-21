@@ -36,8 +36,16 @@ The core function to interact with LLMs. It standardizes the input and output fo
 *   `model` (string): The model identifier. Can include the provider prefix (e.g., `openai/gpt-4o`, `anthropic/claude-haiku-4-5`, `gemini/gemini-3.5-flash`). If the prefix is omitted, the engine will attempt to infer the provider.
 *   `messages` (Array): An array of message objects (OpenAI format).
 *   `tools` (Array) *Optional*: An array of tool definitions for function calling.
-*   `tool_choice` (string | Object) *Optional*: Forces the model to use a specific tool or automatically decide (`"auto"`).
-*   `temperature` (number) *Optional*: Controls randomness (defaults to `0`).
+*   `tool_choice` (string | Object) *Optional*: `"auto"`, `"none"`, `"required"`, or `{ type: "function", function: { name } }`. Translated for Anthropic and Gemini; a form that cannot be translated is refused.
+*   `temperature` (number) *Optional*: Controls randomness. Not sent when omitted, so the provider's default applies (reasoning models accept only their default).
+*   `max_tokens` (number) *Optional*: Output token limit, for every provider. Anthropic defaults to `4096`; the others to the provider's own default.
+*   `providerOptions` (Object) *Optional*: Further provider request fields (e.g. `top_p`, `thinking`, `max_completion_tokens`), passed through as given. A field the options above already set is refused.
+*   `client` (Object) *Optional*: A ready SDK client for the provider (your own HTTP agent, proxy, or a test double). The internal client registry is then not used.
+*   `signal` (AbortSignal) *Optional*: Cancels the call, retries and waits included.
+*   `timeout` (number) *Optional*: Milliseconds for the whole call, retries and waits included. Rejects with an error named `TimeoutError`.
+*   `maxAttempts` (number) *Optional*: Attempts in all, the first included (default `3`). Only transient failures are retried: 408, 409, 429, 5xx and network errors. `Retry-After` is honoured.
+*   `retryBaseMs` (number) *Optional*: Base of the exponential backoff (default `1000`).
+*   `maxRetryDelayMs` (number) *Optional*: Longest single wait (default `60000`); a longer `Retry-After` is answered at once instead of waited for.
 *   `apiKey` (string) *Optional*: Explicitly pass the API key.
 *   `baseURL` (string) *Optional*: Custom Base URL for OpenAI-compatible endpoints.
 *   `providerConfig` (Object) *Optional*: Advanced configuration `{ protocol, apiKey, baseURL }`. Useful for using deepseek/dashscope via OpenAI-compatible protocol.
@@ -46,19 +54,36 @@ The core function to interact with LLMs. It standardizes the input and output fo
 
 **Returns:** 
 
-A Promise resolving to an OpenAI-standardized response object:
+A Promise resolving to the same OpenAI-standardized shape for every provider:
 ```javascript
 {
-  usage: { prompt_tokens: number, completion_tokens: number },
+  id: string | null,
+  model: string | null,
+  provider: string,          // e.g. "deepseek"
+  protocol: string,          // e.g. "openai"
+  usage: {                   // null when the provider reported none
+    prompt_tokens,           // every input token, cached ones included
+    completion_tokens,       // every output token, reasoning included
+    total_tokens,
+    cache_read_tokens,       // part of prompt_tokens read from a cache
+    cache_creation_tokens,   // part of prompt_tokens written to a cache
+    reasoning_tokens         // part of completion_tokens spent reasoning
+  },                         // each a number, or null if not reported (never a guessed 0)
   choices: [{
+    index: 0,
+    finish_reason: "stop" | "length" | "tool_calls" | "content_filter" | string | null,
+    native_finish_reason: string | null,  // the provider's own reason
     message: {
+      role: "assistant",
       content: string,
-      tool_calls: Array, // Standardized tool call format
+      tool_calls: Array,     // [{ id, type: "function", function: { name, arguments } }]
       model_dump: Function
     }
   }]
+  // raw: the provider SDK's own response (not enumerable)
 }
 ```
+A reason with no OpenAI equivalent is passed through as the provider named it, never as `"stop"`: a reply cut off at the limit is always distinguishable from a complete one.
 
 ## Usage Examples
 
