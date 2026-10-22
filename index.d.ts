@@ -105,8 +105,11 @@ interface CompletionOptions {
     client?: object;
     /** Which account pays. Default "api_key". */
     auth?: "api_key" | "subscription";
-    /** With auth "subscription": how to start the client, e.g. ["node", "/path/to/cli.js"]. Default: the client's name. */
-    subscription?: { command?: string[]; };
+    /**
+     * With auth "subscription": how to start the client, e.g. ["node", "/path/to/cli.js"] (default: the
+     * client's name), and how hard the model thinks -- one of the client's SubscriptionCapabilities.effort.
+     */
+    subscription?: { command?: string[]; effort?: string; };
     /** Cancels the call, retries and waits included. */
     signal?: AbortSignal;
     /** Milliseconds for the whole call, retries and waits included. */
@@ -185,6 +188,8 @@ interface SubscriptionCapabilities {
     readonly maxTokens: false;
     /** One request: system and user messages only. */
     readonly multiTurn: false;
+    /** The effort levels the client takes; none means an effort is refused. */
+    readonly effort: readonly string[];
 }
 
 declare const SUBSCRIPTION_PROVIDERS: Readonly<Record<"anthropic" | "openai" | "google", SubscriptionCapabilities>>;
