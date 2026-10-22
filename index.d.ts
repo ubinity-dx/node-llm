@@ -13,6 +13,8 @@
  *   anthropic/, claude-*  anthropic  api.anthropic.com
  *   gemini/, google/      google     Gemini API
  *   vertex_ai/            vertex_ai  Vertex AI (vertexProject, vertexLocation)
+ *   antigravity/          (subscription only) any model the Antigravity
+ *                         subscription serves, by its id: Gemini, Claude, GPT-OSS
  *
  * Any other OpenAI-compatible server: providerConfig { protocol: "openai",
  * baseURL }, with or without a key.
@@ -208,7 +210,7 @@ interface SubscriptionProbe {
 
 /** Asks a provider's subscription client whether it is logged in, without spending any allowance. */
 declare function probeSubscription(options: {
-    provider: "anthropic" | "openai" | "gemini" | "google";
+    provider: "anthropic" | "openai" | "gemini" | "google" | "antigravity";
     subscription?: { command?: string[]; wsl?: string; };
     timeoutMs?: number;
     client?: object;
@@ -216,7 +218,7 @@ declare function probeSubscription(options: {
 
 /** On Windows: where a provider's subscription client is installed inside a WSL distribution, or null. */
 declare function locateSubscriptionClient(options: {
-    provider: "anthropic" | "openai" | "gemini" | "google";
+    provider: "anthropic" | "openai" | "gemini" | "google" | "antigravity";
     wsl: string;
     timeoutMs?: number;
     client?: object;
