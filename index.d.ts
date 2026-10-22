@@ -19,7 +19,7 @@
  *
  * Who pays (auth): "api_key" (the default), or "subscription" -- the user's
  * Claude, ChatGPT or Gemini subscription, used through the provider's own
- * client run headless (claude, codex, gemini), never by reusing its login
+ * client run headless (claude, codex, agy), never by reusing its login
  * token. A subscription call carries a declared subset of the contract
  * (SUBSCRIPTION_PROVIDERS): one request of text, with system instructions.
  * Anything else is refused as "unsupported", never dropped.
@@ -179,7 +179,7 @@ declare const ERROR_CODES: readonly ErrorCode[];
 
 /** What a subscription call can carry, per protocol. */
 interface SubscriptionCapabilities {
-    readonly cli: "claude" | "codex" | "gemini";
+    readonly cli: "claude" | "codex" | "agy";
     /** "in-prompt": the client has no system prompt of its own; instructions go ahead of the request. */
     readonly systemPrompt: "native" | "in-prompt";
     readonly tools: false;
@@ -188,6 +188,8 @@ interface SubscriptionCapabilities {
     readonly maxTokens: false;
     /** One request: system and user messages only. */
     readonly multiTurn: false;
+    /** The longest request, in characters, a client that takes its prompt as an argument accepts. */
+    readonly maxPromptChars?: number;
     /** The effort levels the client takes; none means an effort is refused. */
     readonly effort: readonly string[];
 }
