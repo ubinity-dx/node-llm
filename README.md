@@ -55,13 +55,19 @@ Claude Pro/Max, ChatGPT Plus/Pro and Gemini subscriptions can pay instead of an 
 | --- | --- | --- |
 | `anthropic/` | Claude Code (`claude`) | `claude` once, then log in with your Claude account |
 | `openai/` (OpenAI's own models) | Codex (`codex`) | `codex login` with "Sign in with ChatGPT" |
-| `gemini/`, `google/` | Gemini CLI (`gemini`) | `gemini` once, then log in with Google |
+| `gemini/`, `google/` | Antigravity CLI (`agy`) | `agy` once, then log in with Google (the Gemini CLI's consumer version was shut down on 2026-06-18) |
 
 Why not just use the subscription's login token with the API: Anthropic's terms forbid using it in any other product, and OpenAI and Google publish no way to do so. Running their own client is the sanctioned route.
 
-What a subscription call can carry (`SUBSCRIPTION_PROVIDERS`): one request of text, with system instructions. Tools, `temperature`, `max_tokens`, `providerOptions`, images, multi-turn conversations, API keys and base URLs are refused with code `unsupported`, never silently dropped. Every provider's API-key variable is removed from the client's environment, because a client prefers a key when it finds one and would bill an API account instead. The client runs in an empty temporary directory, with the prompt on stdin. The response records `auth: 'subscription'`; `finish_reason` is `null`, because the clients do not report one.
+What a subscription call can carry (`SUBSCRIPTION_PROVIDERS`): one request of text, with system instructions. Tools, `temperature`, `max_tokens`, `providerOptions`, images, multi-turn conversations, API keys and base URLs are refused with code `unsupported`, never silently dropped. Every provider's API-key variable is removed from the client's environment, because a client prefers a key when it finds one and would bill an API account instead. The client runs in an empty temporary directory, with the prompt on stdin (or, for agy, as an argument). The response records `auth: 'subscription'`; `finish_reason` is `null`, because the clients do not report one.
+
+The Antigravity CLI reads no stdin, so its request is passed attached to `-p` as one argument and is limited to 30000 characters (`SUBSCRIPTION_PROVIDERS.google.maxPromptChars`); a longer one is refused. `subscription: { effort }` sets how hard the model thinks, for every client (`low` to `max`).
 
 A spent allowance fails with `rate_limit`, a missing login with `authentication`, and a client that is not installed with `missing_dependency`. A client installed elsewhere is named with `subscription: { command: ['node', '/path/to/cli.js'] }` (on Windows, an npm `.cmd` shim cannot be started without a shell, so name node and the script).
+
+**Is the client logged in?** `probeSubscription({ provider })` asks without spending anything (`claude auth status`, `codex login status`, `agy models`) and answers `ok`, `unauthenticated`, `missing`, `error` or `unknown`, with the time it asked. Only a subscription login is `ok`: a client logged in with an API key is not.
+
+**Clients in WSL, from Windows.** `subscription: { wsl: 'Ubuntu', command: ['/home/me/.local/bin/codex'] }` runs the client inside that distribution (`wsl.exe -e`, no shell; the API keys are removed inside WSL). `locateSubscriptionClient({ provider, wsl })` finds the path.
 
 ```javascript
 const { completion } = require('@ubinity/node-llm');
