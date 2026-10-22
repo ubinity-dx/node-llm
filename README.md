@@ -56,6 +56,9 @@ Claude Pro/Max, ChatGPT Plus/Pro and Gemini subscriptions can pay instead of an 
 | `anthropic/` | Claude Code (`claude`) | `claude` once, then log in with your Claude account |
 | `openai/` (OpenAI's own models) | Codex (`codex`) | `codex login` with "Sign in with ChatGPT" |
 | `gemini/`, `google/` | Antigravity CLI (`agy`) | `agy` once, then log in with Google (the Gemini CLI's consumer version was shut down on 2026-06-18) |
+| `antigravity/<id>` | Antigravity CLI (`agy`) | the same; reaches every model that subscription serves by its id (`agy models` lists them), e.g. `antigravity/claude-sonnet-5-5-low`, `antigravity/gpt-oss-120b-medium`. Subscription only: there is no API behind this name |
+
+`ollama/<model>` takes any model name Ollama serves, tags and registries included (`ollama/qwen3-coder:30b`, `ollama/hf.co/org/Model-GGUF:Q4_K_M`).
 
 Why not just use the subscription's login token with the API: Anthropic's terms forbid using it in any other product, and OpenAI and Google publish no way to do so. Running their own client is the sanctioned route.
 
