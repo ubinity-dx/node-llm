@@ -128,6 +128,12 @@ interface CompletionOptions {
      * the options above, and stream, stream_options, n and candidateCount.
      */
     providerOptions?: Record<string, unknown>;
+    /**
+     * How hard the model thinks (subscription calls). 'low' | 'medium' | 'high' name that level where the
+     * model has it; 'max' is the model's top level; { native } is one of the model's own levels. A level the
+     * model does not have is refused, never moved to a neighbouring one. See EFFORT_LEVELS.
+     */
+    effort?: Effort;
     /** Reserved: streaming is not part of contract version 1, and is refused. */
     stream?: never;
 }
@@ -156,6 +162,8 @@ interface CompletionResponse {
     protocol: string;
     /** Which account paid. Recorded so that a ledger can tell subscription use from metered use. */
     auth: "api_key" | "subscription";
+    /** The effort asked for and the level applied; null when none was named and the client used its default. */
+    effort: { requested: Effort | null; applied: string | null; } | null;
     /** null when the provider reported none. */
     usage: Usage | null;
     choices: Array<{
@@ -173,6 +181,8 @@ interface CompletionResponse {
     /** The provider SDK's own response. Not enumerable. */
     readonly raw: unknown;
 }
+
+type Effort = "low" | "medium" | "high" | "max" | { native: string; };
 
 type ErrorCode =
     | "invalid_request" | "authentication" | "permission" | "not_found" | "rate_limit" | "server"
@@ -216,6 +226,21 @@ declare function probeSubscription(options: {
     client?: object;
 }): Promise<SubscriptionProbe>;
 
+/** Each subscription client's effort levels, per model ('all' when they hold for every model), as read from its catalog. */
+declare const EFFORT_LEVELS: Readonly<Record<"anthropic" | "openai" | "google", {
+    all?: readonly string[]; models?: Readonly<Record<string, readonly string[]>>; inModelId?: boolean; }>>;
+
+/** What an effort becomes for a model, without a call; throws a NodeLlmError when the model cannot honour it. */
+declare function resolveEffort(options: { model: string; effort: Effort; }): { model: string; requested: Effort | null; applied: string | null; };
+
+/** A subscription client's own effort catalog, read without a prompt: { model: levels }, '*' for every model. */
+declare function effortCatalog(options: {
+    provider: "anthropic" | "openai" | "gemini" | "google" | "antigravity";
+    subscription?: { command?: string[]; wsl?: string; };
+    timeoutMs?: number;
+    client?: object;
+}): Promise<Record<string, string[]> | null>;
+
 /** On Windows: where a provider's subscription client is installed inside a WSL distribution, or null. */
 declare function locateSubscriptionClient(options: {
     provider: "anthropic" | "openai" | "gemini" | "google" | "antigravity";
@@ -243,8 +268,8 @@ declare class NodeLlmError extends Error {
 /** Rejects only with a NodeLlmError. */
 declare function completion(options: CompletionOptions): Promise<CompletionResponse>;
 
-export { completion, LRUClientRegistry, getProviderAndKeyName, NodeLlmError, ERROR_CODES, CONTRACT_VERSION, SUBSCRIPTION_PROVIDERS, probeSubscription, locateSubscriptionClient };
+export { completion, LRUClientRegistry, getProviderAndKeyName, NodeLlmError, ERROR_CODES, CONTRACT_VERSION, SUBSCRIPTION_PROVIDERS, probeSubscription, locateSubscriptionClient, resolveEffort, effortCatalog, EFFORT_LEVELS };
 export type {
     CompletionOptions, CompletionResponse, Message, ContentPart, TextPart, ImagePart, Tool, ToolCall, Usage, ErrorCode,
-    SubscriptionCapabilities, SubscriptionProbe
+    SubscriptionCapabilities, SubscriptionProbe, Effort
 };
