@@ -1,4 +1,4 @@
-const { completion, LRUClientRegistry, getProviderAndKeyName, NodeLlmError, ERROR_CODES, CONTRACT_VERSION, SUBSCRIPTION_PROVIDERS } = require('./lib/node_llm');
+const { completion, LRUClientRegistry, getProviderAndKeyName, NodeLlmError, ERROR_CODES, CONTRACT_VERSION, SUBSCRIPTION_PROVIDERS, probeSubscription } = require('./lib/node_llm');
 
 module.exports = {
     completion,
@@ -7,5 +7,6 @@ module.exports = {
     NodeLlmError,
     ERROR_CODES,
     CONTRACT_VERSION,
-    SUBSCRIPTION_PROVIDERS
+    SUBSCRIPTION_PROVIDERS,
+    probeSubscription
 };

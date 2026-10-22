@@ -194,6 +194,23 @@ interface SubscriptionCapabilities {
 
 declare const SUBSCRIPTION_PROVIDERS: Readonly<Record<"anthropic" | "openai" | "google", SubscriptionCapabilities>>;
 
+/** Whether a subscription client can be used, in the node capability vocabulary; "unknown" is not usable. */
+interface SubscriptionProbe {
+    result: "ok" | "unauthenticated" | "missing" | "error" | "unknown";
+    /** Unix seconds. */
+    checked_at: number;
+    /** Why, or for "ok" the plan; never who is logged in. */
+    detail: unknown;
+}
+
+/** Asks a provider's subscription client whether it is logged in, without spending any allowance. */
+declare function probeSubscription(options: {
+    provider: "anthropic" | "openai" | "gemini" | "google";
+    subscription?: { command?: string[]; };
+    timeoutMs?: number;
+    client?: object;
+}): Promise<SubscriptionProbe>;
+
 /** Every failure of completion(), whichever provider produced it. */
 declare class NodeLlmError extends Error {
     readonly name: "NodeLlmError";
@@ -213,8 +230,8 @@ declare class NodeLlmError extends Error {
 /** Rejects only with a NodeLlmError. */
 declare function completion(options: CompletionOptions): Promise<CompletionResponse>;
 
-export { completion, LRUClientRegistry, getProviderAndKeyName, NodeLlmError, ERROR_CODES, CONTRACT_VERSION, SUBSCRIPTION_PROVIDERS };
+export { completion, LRUClientRegistry, getProviderAndKeyName, NodeLlmError, ERROR_CODES, CONTRACT_VERSION, SUBSCRIPTION_PROVIDERS, probeSubscription };
 export type {
     CompletionOptions, CompletionResponse, Message, ContentPart, TextPart, ImagePart, Tool, ToolCall, Usage, ErrorCode,
-    SubscriptionCapabilities
+    SubscriptionCapabilities, SubscriptionProbe
 };
