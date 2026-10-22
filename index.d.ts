@@ -17,6 +17,13 @@
  * Any other OpenAI-compatible server: providerConfig { protocol: "openai",
  * baseURL }, with or without a key.
  *
+ * Who pays (auth): "api_key" (the default), or "subscription" -- the user's
+ * Claude, ChatGPT or Gemini subscription, used through the provider's own
+ * client run headless (claude, codex, gemini), never by reusing its login
+ * token. A subscription call carries a declared subset of the contract
+ * (SUBSCRIPTION_PROVIDERS): one request of text, with system instructions.
+ * Anything else is refused as "unsupported", never dropped.
+ *
  * What the contract guarantees, for every provider alike:
  *   - the same messages are accepted or refused (text and images only);
  *   - one complete reply, with finish_reason in OpenAI's vocabulary;
@@ -90,8 +97,16 @@ interface CompletionOptions {
     providerConfig?: { protocol?: string; apiKey?: string; baseURL?: string; };
     vertexProject?: string;
     vertexLocation?: string;
-    /** A ready SDK client for the provider; the client registry is then not used. */
+    /**
+     * A ready SDK client for the provider; the client registry is then not used.
+     * With auth "subscription": an object whose run(command, args, { env, cwd, input, signal })
+     * resolves to { code, stdout, stderr }, in place of starting the client process.
+     */
     client?: object;
+    /** Which account pays. Default "api_key". */
+    auth?: "api_key" | "subscription";
+    /** With auth "subscription": how to start the client, e.g. ["node", "/path/to/cli.js"]. Default: the client's name. */
+    subscription?: { command?: string[]; };
     /** Cancels the call, retries and waits included. */
     signal?: AbortSignal;
     /** Milliseconds for the whole call, retries and waits included. */
@@ -133,6 +148,8 @@ interface CompletionResponse {
     provider: string;
     /** The protocol that served it: "openai", "anthropic", "google" or "vertex_ai". */
     protocol: string;
+    /** Which account paid. Recorded so that a ledger can tell subscription use from metered use. */
+    auth: "api_key" | "subscription";
     /** null when the provider reported none. */
     usage: Usage | null;
     choices: Array<{
@@ -157,6 +174,21 @@ type ErrorCode =
 
 declare const ERROR_CODES: readonly ErrorCode[];
 
+/** What a subscription call can carry, per protocol. */
+interface SubscriptionCapabilities {
+    readonly cli: "claude" | "codex" | "gemini";
+    /** "in-prompt": the client has no system prompt of its own; instructions go ahead of the request. */
+    readonly systemPrompt: "native" | "in-prompt";
+    readonly tools: false;
+    readonly images: false;
+    readonly temperature: false;
+    readonly maxTokens: false;
+    /** One request: system and user messages only. */
+    readonly multiTurn: false;
+}
+
+declare const SUBSCRIPTION_PROVIDERS: Readonly<Record<"anthropic" | "openai" | "google", SubscriptionCapabilities>>;
+
 /** Every failure of completion(), whichever provider produced it. */
 declare class NodeLlmError extends Error {
     readonly name: "NodeLlmError";
@@ -176,7 +208,8 @@ declare class NodeLlmError extends Error {
 /** Rejects only with a NodeLlmError. */
 declare function completion(options: CompletionOptions): Promise<CompletionResponse>;
 
-export { completion, LRUClientRegistry, getProviderAndKeyName, NodeLlmError, ERROR_CODES, CONTRACT_VERSION };
+export { completion, LRUClientRegistry, getProviderAndKeyName, NodeLlmError, ERROR_CODES, CONTRACT_VERSION, SUBSCRIPTION_PROVIDERS };
 export type {
-    CompletionOptions, CompletionResponse, Message, ContentPart, TextPart, ImagePart, Tool, ToolCall, Usage, ErrorCode
+    CompletionOptions, CompletionResponse, Message, ContentPart, TextPart, ImagePart, Tool, ToolCall, Usage, ErrorCode,
+    SubscriptionCapabilities
 };
