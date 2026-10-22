@@ -108,8 +108,9 @@ interface CompletionOptions {
     /**
      * With auth "subscription": how to start the client, e.g. ["node", "/path/to/cli.js"] (default: the
      * client's name), and how hard the model thinks -- one of the client's SubscriptionCapabilities.effort.
+     * wsl: on Windows, the WSL distribution the client lives in; command is then its path there.
      */
-    subscription?: { command?: string[]; effort?: string; };
+    subscription?: { command?: string[]; effort?: string; wsl?: string; };
     /** Cancels the call, retries and waits included. */
     signal?: AbortSignal;
     /** Milliseconds for the whole call, retries and waits included. */
@@ -208,10 +209,18 @@ interface SubscriptionProbe {
 /** Asks a provider's subscription client whether it is logged in, without spending any allowance. */
 declare function probeSubscription(options: {
     provider: "anthropic" | "openai" | "gemini" | "google";
-    subscription?: { command?: string[]; };
+    subscription?: { command?: string[]; wsl?: string; };
     timeoutMs?: number;
     client?: object;
 }): Promise<SubscriptionProbe>;
+
+/** On Windows: where a provider's subscription client is installed inside a WSL distribution, or null. */
+declare function locateSubscriptionClient(options: {
+    provider: "anthropic" | "openai" | "gemini" | "google";
+    wsl: string;
+    timeoutMs?: number;
+    client?: object;
+}): Promise<string | null>;
 
 /** Every failure of completion(), whichever provider produced it. */
 declare class NodeLlmError extends Error {
@@ -232,7 +241,7 @@ declare class NodeLlmError extends Error {
 /** Rejects only with a NodeLlmError. */
 declare function completion(options: CompletionOptions): Promise<CompletionResponse>;
 
-export { completion, LRUClientRegistry, getProviderAndKeyName, NodeLlmError, ERROR_CODES, CONTRACT_VERSION, SUBSCRIPTION_PROVIDERS, probeSubscription };
+export { completion, LRUClientRegistry, getProviderAndKeyName, NodeLlmError, ERROR_CODES, CONTRACT_VERSION, SUBSCRIPTION_PROVIDERS, probeSubscription, locateSubscriptionClient };
 export type {
     CompletionOptions, CompletionResponse, Message, ContentPart, TextPart, ImagePart, Tool, ToolCall, Usage, ErrorCode,
     SubscriptionCapabilities, SubscriptionProbe
