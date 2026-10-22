@@ -5,7 +5,7 @@ This project implements a Universal LLM Routing Engine for Node.js, designed for
 ## Features
 
 *   **Lightweight:** Designed with a "zero-bloat" philosophy to ensure minimal resource consumption.
-*   **Universal LLM Routing:** Provides unified access to multiple LLM providers (OpenAI, Anthropic, Google Gemini / Vertex AI).
+*   **Universal LLM Routing:** Provides unified access to OpenAI and OpenAI-compatible servers (DeepSeek, Qwen, Ollama, self-hosted), Anthropic, and Google Gemini / Vertex AI, under one calling contract.
 *   **Node.js Native:** Built specifically for Node.js applications, ensuring optimal performance and compatibility.
 *   **Orchestration Capabilities:** Built-in exponential backoff retries and LRU cache for client reuse.
 *   **Standardized Output:** Normalizes various provider responses into a standard OpenAI-compatible response format.
@@ -24,6 +24,28 @@ npm install openai
 npm install @anthropic-ai/sdk
 npm install @google/genai
 ```
+
+## The calling contract (version 1)
+
+One request form, one response shape and one error type, whichever provider answers. The contract's version is exported as `CONTRACT_VERSION`, and `index.d.ts` states it in full.
+
+| Model prefix | Protocol | Endpoint (unless `baseURL` is given) | Key |
+| --- | --- | --- | --- |
+| `openai/`, or a model starting `gpt` | openai | api.openai.com | required |
+| `deepseek/` | openai | api.deepseek.com | required |
+| `qwen/`, `dashscope/` | openai | dashscope.aliyuncs.com/compatible-mode/v1 | required |
+| `ollama/` | openai | localhost:11434/v1 | none |
+| any OpenAI-compatible server: `providerConfig: { protocol: 'openai', baseURL }` | openai | as given | optional |
+| `anthropic/`, or a model starting `claude` | anthropic | api.anthropic.com | required |
+| `gemini/`, `google/` | google | Gemini API | required |
+| `vertex_ai/` | vertex_ai | Vertex AI (`vertexProject`, `vertexLocation`) | none (Google credentials) |
+
+For every provider alike:
+
+*   **Messages** are in OpenAI's chat form. Content is a string, or a list of parts: `{ type: 'text', text }` and `{ type: 'image_url', image_url: { url } }`, where `url` is an http(s) URL or a base64 `data:` URL. Gemini takes images as `data:` URLs only (a remote URL would mean a hidden download). Any other part is refused before a request is made. System messages hold text only.
+*   **One complete reply** comes back, in the response shape below.
+*   **Every failure** rejects with a `NodeLlmError`; see *Errors*.
+*   **Reserved for a later version:** streaming, and several replies at once. `stream: true`, and `stream`, `n` or `candidateCount` in `providerOptions`, are refused.
 
 ## API Reference
 
@@ -84,6 +106,28 @@ A Promise resolving to the same OpenAI-standardized shape for every provider:
 }
 ```
 A reason with no OpenAI equivalent is passed through as the provider named it, never as `"stop"`: a reply cut off at the limit is always distinguishable from a complete one.
+
+### Errors
+
+`completion()` rejects only with a `NodeLlmError` (exported), whichever provider failed:
+
+| `code` | Meaning |
+| --- | --- |
+| `invalid_request` | The request is outside the contract, or the provider refused it as malformed (400, 413, 422, other 4xx) |
+| `authentication` | The key is wrong, revoked, or missing at the provider (401) |
+| `permission` | The key may not do this (403) |
+| `not_found` | No such model or endpoint (404) |
+| `rate_limit` | Too many requests or tokens (429); see `retryAfterMs` |
+| `server` | The provider failed (5xx, 409) |
+| `network` | No answer could be had from the endpoint |
+| `timeout` | The call's `timeout` ran out, or the server timed out (408) |
+| `aborted` | The caller's `signal` fired; the reason is the `cause` |
+| `configuration` | The call cannot be made as configured (no key, no Vertex project) |
+| `missing_dependency` | The provider's SDK is not installed |
+| `unsupported` | No protocol serves this provider, or a reserved feature was asked for |
+| `unknown` | Anything else; see `cause` |
+
+Each error also carries `provider`, `protocol`, `status` (the HTTP status, or `null`), `retryAfterMs`, `retryable` (whether trying again later may succeed; `completion()` has already retried what it was allowed to), and `cause` (the original error). `ERROR_CODES` lists the codes.
 
 ## Usage Examples
 
@@ -179,28 +223,74 @@ async function main() {
 main();
 ```
 
-### 4. OpenAI-Compatible Endpoints (DeepSeek / DashScope)
+### 4. OpenAI-Compatible Servers (DeepSeek / Qwen / Ollama / self-hosted)
 
-For providers like DeepSeek or DashScope (Qwen), you can override the protocol to `openai` and provide a custom `baseURL`.
+DeepSeek, Qwen and Ollama have default endpoints; any other OpenAI-compatible server is reached by naming its `baseURL`.
 
 ```javascript
 const { completion } = require('@ubinity/node-llm');
 
 async function main() {
+    const messages = [{ role: 'user', content: 'Explain quantum computing in one sentence.' }];
+
+    // Hosted, with their default endpoints.
+    await completion({ model: 'deepseek/deepseek-chat', apiKey: process.env.DEEPSEEK_API_KEY, messages });
+    await completion({ model: 'qwen/qwen-max', apiKey: process.env.DASHSCOPE_API_KEY, messages });
+
+    // A local Ollama: no key.
+    await completion({ model: 'ollama/llama3.1', messages });
+
+    // Any other OpenAI-compatible server (vLLM, LM Studio, ...): name its endpoint; the key is optional.
     const response = await completion({
-        model: 'deepseek-v4-flash',
-        providerConfig: { 
-            protocol: 'openai', 
-            apiKey: process.env.DEEPSEEK_API_KEY,
-            baseURL: 'https://api.deepseek.com/v1' 
-        },
-        messages: [
-            { role: 'user', content: 'Explain quantum computing in one sentence.' }
-        ]
+        model: 'openai/my-served-model',
+        baseURL: 'http://127.0.0.1:8000/v1',
+        messages
     });
 
     console.log(response.choices[0].message.content);
 }
 
 main();
+```
+
+### 5. Images
+
+```javascript
+const fs = require('fs');
+const { completion } = require('@ubinity/node-llm');
+
+async function main() {
+    const png = fs.readFileSync('chart.png').toString('base64');
+    const response = await completion({
+        model: 'anthropic/claude-haiku-4-5',
+        apiKey: process.env.ANTHROPIC_API_KEY,
+        messages: [{
+            role: 'user',
+            content: [
+                { type: 'text', text: 'What does this chart show?' },
+                { type: 'image_url', image_url: { url: `data:image/png;base64,${png}` } }
+            ]
+        }]
+    });
+    console.log(response.choices[0].message.content);
+}
+
+main();
+```
+
+### 6. Handling failures once, for every provider
+
+```javascript
+const { completion, NodeLlmError } = require('@ubinity/node-llm');
+
+async function ask(model, apiKey, messages) {
+    try {
+        return await completion({ model, apiKey, messages, timeout: 30000 });
+    } catch (e) {
+        if (!(e instanceof NodeLlmError)) throw e; // cannot happen: the contract rejects only with NodeLlmError
+        if (e.code === 'rate_limit') console.warn(`rate limited by ${e.provider}; asked to wait ${e.retryAfterMs} ms`);
+        else if (e.code === 'authentication') console.error(`check the key for ${e.provider}`);
+        throw e;
+    }
+}
 ```
