@@ -47,6 +47,37 @@ For every provider alike:
 *   **Every failure** rejects with a `NodeLlmError`; see *Errors*.
 *   **Reserved for a later version:** streaming, and several replies at once. `stream: true`, and `stream`, `n` or `candidateCount` in `providerOptions`, are refused.
 
+## Subscriptions
+
+Claude Pro/Max, ChatGPT Plus/Pro and Gemini subscriptions can pay instead of an API key: pass `auth: 'subscription'`. The call is then served by the provider's own client, run headless on this machine, logged in by you:
+
+| Model prefix | Client | Install and log in |
+| --- | --- | --- |
+| `anthropic/` | Claude Code (`claude`) | `claude` once, then log in with your Claude account |
+| `openai/` (OpenAI's own models) | Codex (`codex`) | `codex login` with "Sign in with ChatGPT" |
+| `gemini/`, `google/` | Gemini CLI (`gemini`) | `gemini` once, then log in with Google |
+
+Why not just use the subscription's login token with the API: Anthropic's terms forbid using it in any other product, and OpenAI and Google publish no way to do so. Running their own client is the sanctioned route.
+
+What a subscription call can carry (`SUBSCRIPTION_PROVIDERS`): one request of text, with system instructions. Tools, `temperature`, `max_tokens`, `providerOptions`, images, multi-turn conversations, API keys and base URLs are refused with code `unsupported`, never silently dropped. Every provider's API-key variable is removed from the client's environment, because a client prefers a key when it finds one and would bill an API account instead. The client runs in an empty temporary directory, with the prompt on stdin. The response records `auth: 'subscription'`; `finish_reason` is `null`, because the clients do not report one.
+
+A spent allowance fails with `rate_limit`, a missing login with `authentication`, and a client that is not installed with `missing_dependency`. A client installed elsewhere is named with `subscription: { command: ['node', '/path/to/cli.js'] }` (on Windows, an npm `.cmd` shim cannot be started without a shell, so name node and the script).
+
+```javascript
+const { completion } = require('@ubinity/node-llm');
+
+const r = await completion({
+    model: 'anthropic/claude-haiku-4-5',
+    auth: 'subscription',
+    timeout: 120000,
+    messages: [
+        { role: 'system', content: 'Answer in one sentence.' },
+        { role: 'user', content: 'What is a vendored dependency?' }
+    ]
+});
+console.log(r.auth, r.choices[0].message.content);
+```
+
 ## API Reference
 
 ### `completion(options)`
