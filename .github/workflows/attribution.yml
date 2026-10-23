@@ -1,0 +1,26 @@
+name: Attribution
+
+# No commit names a co-author: GitHub lists the account behind a
+# Co-Authored-By trailer among the repository's contributors, and AI coding
+# tools add one on their own. Only a pull request's own commits are judged;
+# the history on main is kept as it is.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  no-co-author:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The base branch must be present to tell the pull request's own
+          # commits from the history.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - name: No Co-Authored-By trailer in this pull request's commits
+        run: node scripts/check-attribution.js "origin/${{ github.base_ref }}"
