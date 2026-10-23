@@ -66,7 +66,7 @@
     }
   },
   "scripts": {
-    "test": "jest && node --test tests/node/contract.test.js tests/node/sdk-conformance.test.js",
+    "test": "jest && node --test tests/node/contract.test.js tests/node/sdk-conformance.test.js tests/node/attribution.test.js",
     "test:live:ollama": "node tests/live/ollama.live.js",
     "test:live:api": "node tests/live/api.live.js",
     "prepublishOnly": "npm test"
