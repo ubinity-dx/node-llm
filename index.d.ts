@@ -198,7 +198,9 @@ type Effort = "low" | "medium" | "high" | "max" | { native: string; };
 
 type ErrorCode =
     | "invalid_request" | "authentication" | "permission" | "not_found" | "rate_limit" | "server"
-    | "network" | "timeout" | "aborted" | "configuration" | "missing_dependency" | "unsupported" | "unknown";
+    | "network" | "timeout" | "aborted" | "configuration" | "missing_dependency" | "unsupported" | "unknown"
+    /** The account cannot pay: no credit or quota left. Never retried. Added in 2.1.0. */
+    | "quota_exhausted";
 
 declare const ERROR_CODES: readonly ErrorCode[];
 

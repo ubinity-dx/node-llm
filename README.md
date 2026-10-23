@@ -163,6 +163,7 @@ A reason with no OpenAI equivalent is passed through as the provider named it, n
 | `permission` | The key may not do this (403) |
 | `not_found` | No such model or endpoint (404) |
 | `rate_limit` | Too many requests or tokens (429); see `retryAfterMs` |
+| `quota_exhausted` | The account cannot pay: no credit or quota left (402; OpenAI's 429 `insufficient_quota`; Anthropic's "credit balance is too low"). Never retried; no wait helps |
 | `server` | The provider failed (5xx, 409) |
 | `network` | No answer could be had from the endpoint |
 | `timeout` | The call's `timeout` ran out, or the server timed out (408) |
