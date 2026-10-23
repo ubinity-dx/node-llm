@@ -8,6 +8,9 @@ on:
 jobs:
   publish-npm:
     runs-on: ubuntu-latest
+    # The npmjs.com trusted-publisher entry names this environment; an OIDC
+    # token minted outside it is refused, so the job must run in it.
+    environment: npm-publish
     permissions:
       # Required permission: allows reading the repository code
       contents: read
@@ -21,19 +24,22 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
+          # npm's trusted publishing (OIDC, no token) needs npm 11.5.1 or later,
+          # which Node 24 ships; Node 18's npm cannot do it. 2.x also needs
+          # Node 22 or later to run at all.
+          node-version: '24.x'
           registry-url: 'https://registry.npmjs.org'
-          
+
       - name: Install Dependencies
         run: npm ci
-        
+
       - name: Run Tests
         run: npm test
-        
+
       - name: Publish to NPM (OIDC)
-        # The --provenance flag is required. It attaches build provenance attestations to the published package
+        # Trusted publishing: npm exchanges the workflow's OIDC token itself
+        # (id-token: write above), so no npm token is configured -- the
+        # GitHub token set here before is not an npm credential. The package
+        # must name this repository and workflow as its trusted publisher in
+        # its npmjs.com settings. --provenance attaches the build attestation.
         run: npm publish --provenance
-        env:
-          # In OIDC mode, setup-node automatically intercepts this variable and replaces it with the OIDC Token.
-          # You do NOT need to configure a custom NPM token in GitHub Secrets!
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
