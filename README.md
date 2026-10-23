@@ -270,7 +270,7 @@ main();
 
 **Continuing a tool loop.** Append the reply's message as it came, `message.model_dump()`, then one `tool` message per call. Do not rebuild the message from its parts. Some providers return fields that the next turn must carry back, and refuse that turn without them:
 - **Gemini 3** signs each call. The signature is kept on the call as `extra_content.google.thought_signature`, where Google's own OpenAI-compatible API puts it.
-- **DeepSeek, in thinking mode,** returns `reasoning_content`, sometimes empty, and requires it back.
+- **DeepSeek, in thinking mode,** returns `reasoning_content`, sometimes empty, and asks for it back. It refuses a call it cannot match to one of its own without it.
 
 node-llm sends each field back only to the provider it came from.
 

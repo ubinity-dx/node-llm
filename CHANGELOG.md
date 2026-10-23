@@ -9,7 +9,10 @@
 These were found by the first run against the providers' real APIs, paid by real keys (`npm run test:live:api`).
 
 - **Gemini 3 tool loops failed on their second turn.** Gemini 3 signs each function call, and refuses a history whose calls lack the signature. Calls are now read from the reply's parts, so the signature is kept. It is stored where Google's OpenAI-compatible API puts it (`tool_calls[].extra_content.google.thought_signature`), and sent back as the part's `thoughtSignature`. A call with no arguments now gets `"{}"`.
-- **DeepSeek tool loops in thinking mode failed on their second turn.** DeepSeek requires the assistant's `reasoning_content` back, even an empty one, and the normalised message dropped it. It is now kept on the message, and in `model_dump()`, whenever the provider returns it.
+- **DeepSeek's `reasoning_content` was dropped.** In thinking mode, DeepSeek asks for the assistant's `reasoning_content` back on a tool loop's next turn. It refuses a call it cannot match to one of its own when the field is missing (an empty one is enough).
+  - With its own call ids, DeepSeek currently accepts the turn anyway, so a loop that appends the reply unchanged worked on 2.0.0.
+  - A history rebuilt from parts, or carrying another provider's calls, was refused.
+  - The field is now kept on the message, and in `model_dump()`, whenever the provider returns it.
 - **Neither field leaks to other providers.** Each is sent back only to the provider it came from, and removed for every other OpenAI-protocol provider.
 - **A bad Gemini key was `invalid_request`.** Google answers it with 400 and the reason `API_KEY_INVALID`; it is now `authentication`.
 

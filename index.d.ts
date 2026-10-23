@@ -183,7 +183,7 @@ interface CompletionResponse {
             content: string;
             /**
              * The model's reasoning, when the provider returned it (DeepSeek, Qwen), an empty string included.
-             * Keep it in the history: DeepSeek's thinking mode refuses a tool loop's next turn without it.
+             * Keep it in the history: DeepSeek's thinking mode asks for it back on a tool loop's next turn.
              */
             reasoning_content?: string;
             tool_calls?: ToolCall[];
