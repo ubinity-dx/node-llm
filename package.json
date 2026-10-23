@@ -1,6 +1,6 @@
 {
   "name": "@ubinity/node-llm",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "One calling contract for OpenAI and OpenAI-compatible servers, Anthropic and Gemini -- by API key or by subscription.",
   "author": "Ubinity DX Team <dx@ubinity.tech>",
   "license": "MPL-2.0",
@@ -68,6 +68,7 @@
   "scripts": {
     "test": "jest && node --test tests/node/contract.test.js tests/node/sdk-conformance.test.js",
     "test:live:ollama": "node tests/live/ollama.live.js",
+    "test:live:api": "node tests/live/api.live.js",
     "prepublishOnly": "npm test"
   },
   "devDependencies": {

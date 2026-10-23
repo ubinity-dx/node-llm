@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.0.1 (2026-10-23)
+
+2.0.0 was tagged on GitHub but never reached npm, so 2.0.1 is the first 2.x release there. Read 2.0.0's *Breaking changes* when upgrading from 1.x.
+
+### Fixed
+
+These were found by the first run against the providers' real APIs, paid by real keys (`npm run test:live:api`).
+
+- **Gemini 3 tool loops failed on their second turn.** Gemini 3 signs each function call, and refuses a history whose calls lack the signature. Calls are now read from the reply's parts, so the signature is kept. It is stored where Google's OpenAI-compatible API puts it (`tool_calls[].extra_content.google.thought_signature`), and sent back as the part's `thoughtSignature`. A call with no arguments now gets `"{}"`.
+- **DeepSeek's `reasoning_content` was dropped.** In thinking mode, DeepSeek asks for the assistant's `reasoning_content` back on a tool loop's next turn. It refuses a call it cannot match to one of its own when the field is missing (an empty one is enough).
+  - With its own call ids, DeepSeek currently accepts the turn anyway, so a loop that appends the reply unchanged worked on 2.0.0.
+  - A history rebuilt from parts, or carrying another provider's calls, was refused.
+  - The field is now kept on the message, and in `model_dump()`, whenever the provider returns it.
+- **Neither field leaks to other providers.** Each is sent back only to the provider it came from, and removed for every other OpenAI-protocol provider.
+- **A bad Gemini key was `invalid_request`.** Google answers it with 400 and the reason `API_KEY_INVALID`; it is now `authentication`.
+
+### Verified
+
+- `npm run test:live:api` passed all 29 checks against DeepSeek (`deepseek-flash`) and Gemini (`gemini-3.5-flash-lite`) with real keys. It covers:
+  - replies, system messages and `temperature`;
+  - forced and named tool choice, and a complete tool loop;
+  - `max_tokens`, image input, and prompt-cache counts;
+  - the authentication, unknown-model and timeout errors, and the refusal of `effort`.
+- OpenAI and Anthropic are covered by the same script but have not been run, for want of keys.
+
 ## 2.0.0 (2026-10-23)
 
 2.0.0 gives every provider one calling contract (`CONTRACT_VERSION` 1, stated in full in `index.d.ts`) and adds subscription access. It changes behaviour that 1.x callers may rely on, so it is a major release. Read *Breaking changes* before upgrading.
@@ -52,4 +77,4 @@
 
 - No streaming yet: it is reserved and refused.
 - `effort` applies to subscription calls only. For an API call, pass the provider's own field through `providerOptions`.
-- API-key calls have been verified against the SDKs and a stub server, not against the providers with real keys.
+- At 2.0.0, API-key calls had been verified against the SDKs and a stub server only. 2.0.1 adds real DeepSeek and Gemini runs; OpenAI and Anthropic remain unrun with real keys.

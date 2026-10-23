@@ -17,7 +17,7 @@ This project implements a Universal LLM Routing Engine for Node.js, designed for
 npm install @ubinity/node-llm
 ```
 
-Requires Node.js 22 or later. Install the SDKs of the providers you call by API key (optional peer dependencies; 2.0.0 is checked against these majors by `tests/node/sdk-conformance.test.js`):
+Requires Node.js 22 or later. Install the SDKs of the providers you call by API key (optional peer dependencies; 2.x is checked against these majors by `tests/node/sdk-conformance.test.js`):
 
 ```bash
 npm install openai@^7.43.0             # OpenAI and OpenAI-compatible servers
@@ -142,8 +142,9 @@ A Promise resolving to the same OpenAI-standardized shape for every provider:
     message: {
       role: "assistant",
       content: string,
-      tool_calls: Array,     // [{ id, type: "function", function: { name, arguments } }]
-      model_dump: Function
+      reasoning_content: string,  // only when the provider returned it (DeepSeek, Qwen)
+      tool_calls: Array,     // [{ id, type: "function", function: { name, arguments }, extra_content? }]
+      model_dump: Function   // the message as a plain object, ready to append to the history
     }
   }]
   // raw: the provider SDK's own response (not enumerable)
@@ -158,7 +159,7 @@ A reason with no OpenAI equivalent is passed through as the provider named it, n
 | `code` | Meaning |
 | --- | --- |
 | `invalid_request` | The request is outside the contract, or the provider refused it as malformed (400, 413, 422, other 4xx) |
-| `authentication` | The key is wrong, revoked, or missing at the provider (401) |
+| `authentication` | The key is wrong, revoked, or missing at the provider (401; Gemini's 400 `API_KEY_INVALID`) |
 | `permission` | The key may not do this (403) |
 | `not_found` | No such model or endpoint (404) |
 | `rate_limit` | Too many requests or tokens (429); see `retryAfterMs` |
@@ -267,9 +268,25 @@ async function main() {
 main();
 ```
 
+**Continuing a tool loop.** Append the reply's message as it came, `message.model_dump()`, then one `tool` message per call. Do not rebuild the message from its parts. Some providers return fields that the next turn must carry back, and refuse that turn without them:
+- **Gemini 3** signs each call. The signature is kept on the call as `extra_content.google.thought_signature`, where Google's own OpenAI-compatible API puts it.
+- **DeepSeek, in thinking mode,** returns `reasoning_content`, sometimes empty, and asks for it back. It refuses a call it cannot match to one of its own without it.
+
+node-llm sends each field back only to the provider it came from.
+
+```javascript
+messages.push(message.model_dump());
+for (const call of message.tool_calls) {
+    messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(await run(call)) });
+}
+const next = await completion({ model, apiKey, messages, tools: [getWeatherTool] });
+```
+
 ### 4. OpenAI-Compatible Servers (DeepSeek / Qwen / Ollama / self-hosted)
 
 DeepSeek, Qwen and Ollama have default endpoints; any other OpenAI-compatible server is reached by naming its `baseURL`.
+
+DeepSeek's thinking mode refuses a forced `tool_choice` (`'required'`, or one named function) with a 400 (`invalid_request`). To force a call, turn thinking off for that request: `providerOptions: { thinking: { type: 'disabled' } }`.
 
 ```javascript
 const { completion } = require('@ubinity/node-llm');
