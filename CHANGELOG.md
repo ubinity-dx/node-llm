@@ -46,10 +46,10 @@
 - `tests/node/sdk-conformance.test.js` runs the real SDKs (openai 7.43, @anthropic-ai/sdk 1.1, @google/genai 2.31) against a local stub server, with no API keys. It covers request shapes, reply parsing, retries (the SDKs' own are off), timeouts, and error mapping.
 - `tests/node/contract.test.js` checks every behaviour against stand-ins.
 - The subscription clients were run for real: Claude Code 2.1, Codex 0.163 and the Antigravity CLI 1.4.
+- Ollama was run for real (0.40, `qwen3.5:4b`) by `npm run test:live:ollama`. It checks text replies, every system message, tool calls and tool results, `max_tokens`, an image part, and the `not_found`, `network` and `timeout` errors.
 
 ### Known limits
 
 - No streaming yet: it is reserved and refused.
 - `effort` applies to subscription calls only. For an API call, pass the provider's own field through `providerOptions`.
 - API-key calls have been verified against the SDKs and a stub server, not against the providers with real keys.
-- Ollama has been verified against stand-ins only.

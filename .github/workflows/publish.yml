@@ -8,6 +8,9 @@ on:
 jobs:
   publish-npm:
     runs-on: ubuntu-latest
+    # The npmjs.com trusted-publisher entry names this environment; an OIDC
+    # token minted outside it is refused, so the job must run in it.
+    environment: npm-publish
     permissions:
       # Required permission: allows reading the repository code
       contents: read
