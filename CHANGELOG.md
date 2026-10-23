@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.1.0 (2026-10-23)
+
+### Added
+
+- **A new error code, `quota_exhausted`: the account cannot pay.** It is never retried.
+  - Found against the real APIs with accounts that had no credit.
+    - OpenAI answers 429 with error type `insufficient_quota`. That was `rate_limit`, retried three times, and reported as worth retrying later.
+    - Anthropic answers 400 "Your credit balance is too low". That was `invalid_request`, which blames the request for the account.
+  - HTTP 402 Payment Required is `quota_exhausted` too: DeepSeek documents it as "Insufficient Balance". It has not been seen live.
+  - Gemini's 429 `RESOURCE_EXHAUSTED` stays `rate_limit`, because it also means a per-minute limit.
+  - The change is additive: `ERROR_CODES` gains one entry, and `CONTRACT_VERSION` stays 1. A caller that handles every code should add this one; until then it falls to their default branch.
+
+### Verified
+
+- `npm run test:live:api` confirms both empty accounts come back `quota_exhausted` and are not retried; on 2.0.1 both are contradicted.
+  - The script now also refuses to count a billing refusal as a pass: on an account that cannot pay, every check that needs a billed call is not tried.
+- DeepSeek and Gemini still pass the full live run.
+- OpenAI and Anthropic model calls are still unverified, until their accounts have credit.
+
 ## 2.0.1 (2026-10-23)
 
 2.0.0 was tagged on GitHub but never reached npm, so 2.0.1 is the first 2.x release there. Read 2.0.0's *Breaking changes* when upgrading from 1.x.

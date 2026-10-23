@@ -206,6 +206,22 @@ async function main() {
         try {
             await completion({ model, apiKey, maxAttempts: 1, max_tokens: 16, messages: [{ role: 'user', content: 'Reply with: OK' }] });
         } catch (e) { blocked = e; }
+        // Judged only on an account that cannot pay -- the one case that shows
+        // it -- recognised from the provider's own words, not from node-llm's
+        // code, so a wrong code is contradicted rather than skipped. A 3 s
+        // backoff makes any retry visible in the time taken.
+        if (blocked && /credit|quota|billing|balance/i.test(String(blocked.message))) {
+            const started = Date.now();
+            const e = await rejects(completion({ model, apiKey, maxAttempts: 3, retryBaseMs: 3000,
+                messages: [{ role: 'user', content: 'Reply with: OK' }] }));
+            const took = Date.now() - started;
+            record(`${name}: an account that cannot pay is quota_exhausted, and not retried`,
+                e instanceof NodeLlmError && e.code === 'quota_exhausted' && e.retryable === false && took < 3000 ? 'confirmed' : 'contradicted',
+                `${errorDetail(e)} tookMs=${took}`);
+        } else {
+            record(`${name}: an account that cannot pay is quota_exhausted, and not retried`, 'untried',
+                blocked ? `the first call failed otherwise: ${errorDetail(blocked)}` : 'this account can pay');
+        }
         for (const [check, run] of Object.entries(checksFor(name, model, apiKey))) {
             if (blocked && !NO_CALL_NEEDED.has(check)) {
                 record(`${name}: ${check}`, 'untried', `the first call failed, so nothing billed could be judged: ${errorDetail(blocked)}`);

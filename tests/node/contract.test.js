@@ -6,7 +6,7 @@
  * real child process in tests/fixtures/fake_cli.js).
  *
  * Each check carries the number of the change that introduced the behaviour
- * (001-029, as carried by Ubinity Agent OS, which keeps the per-change
+ * (001-030, as carried by Ubinity Agent OS, which keeps the per-change
  * "fails before, passes after" proof). tests/node/sdk-conformance.test.js
  * checks the same library against the real SDKs.
  *
@@ -1264,6 +1264,40 @@ t('029', 'Gemini: a 400 naming API_KEY_INVALID is authentication, not retried; a
   const other = (await settles(call({ model: 'google/gemini-x', maxAttempts: 1 }))).error;
   return (e && e.code === 'authentication' && e.status === 400 && calls === 1 && other && other.code === 'invalid_request')
     || { code: e && e.code, calls, other: other && other.code };
+});
+
+// ------------------------------------------------- 030 an account that cannot pay is quota_exhausted
+
+// As the real APIs answered accounts with no credit (checked 2026-10-23).
+const noCredit = {
+  openai: () => Object.assign(new Error('429 You have no credits remaining.'), { status: 429, type: 'insufficient_quota', code: 'credit_balance_exhausted' }),
+  anthropic: () => Object.assign(new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}'), { status: 400 }),
+};
+t('030', 'OpenAI: a 429 of type insufficient_quota is quota_exhausted, and is not retried', async () => {
+  fake.handler = () => { throw noCredit.openai(); };
+  const e = (await settles(call({ model: 'openai/gpt-x', maxAttempts: 3, retryBaseMs: 1 }))).error;
+  return (e && e.code === 'quota_exhausted' && e.retryable === false && e.status === 429 && fake.calls.length === 1)
+    || { code: e && e.code, retryable: e && e.retryable, calls: fake.calls.length };
+});
+t('030', 'Anthropic: a 400 saying the credit balance is too low is quota_exhausted, and is not retried', async () => {
+  fake.handler = () => { throw noCredit.anthropic(); };
+  const e = (await settles(call({ model: 'anthropic/claude-x', maxAttempts: 3, retryBaseMs: 1 }))).error;
+  return (e && e.code === 'quota_exhausted' && e.retryable === false && fake.calls.length === 1) || { code: e && e.code, calls: fake.calls.length };
+});
+t('030', 'a 402 is quota_exhausted, and the code is listed in ERROR_CODES', async () => {
+  fake.handler = () => { throw httpError(402); };
+  const e = (await settles(call({ model: 'deepseek/deepseek-chat', maxAttempts: 3, retryBaseMs: 1 }))).error;
+  return (e && e.code === 'quota_exhausted' && fake.calls.length === 1 && llm.ERROR_CODES.includes('quota_exhausted'))
+    || { code: e && e.code, calls: fake.calls.length };
+});
+t('030', 'an ordinary 429 is still rate_limit and retried, and an ordinary 400 still invalid_request', async () => {
+  fake.handler = () => { throw httpError(429); };
+  const limited = (await settles(call({ model: 'openai/gpt-x', maxAttempts: 2, retryBaseMs: 1 }))).error;
+  const tries = fake.calls.length;
+  fake.calls = [];
+  fake.handler = () => { throw Object.assign(new Error('400 {"error":{"message":"messages: field required"}}'), { status: 400 }); };
+  const bad = (await settles(call({ model: 'anthropic/claude-x', maxAttempts: 1 }))).error;
+  return (limited && limited.code === 'rate_limit' && tries === 2 && bad && bad.code === 'invalid_request') || [limited && limited.code, tries, bad && bad.code];
 });
 
 // ---------------------------------------------------------------- [contract]
