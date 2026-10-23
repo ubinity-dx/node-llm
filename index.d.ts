@@ -49,6 +49,11 @@ interface ToolCall {
     id: string;
     type: "function";
     function: { name: string; arguments: string; };
+    /**
+     * Gemini's thought signature for this call, where Google's OpenAI-compatible API puts it. Send the
+     * call back as received: Gemini 3 refuses a tool loop whose calls lost it. Not sent to other providers.
+     */
+    extra_content?: { google?: { thought_signature?: string; }; };
 }
 
 interface TextPart {
@@ -68,6 +73,8 @@ interface Message {
     /** system and developer messages are instructions, and hold text only. */
     role: "system" | "developer" | "user" | "assistant" | "tool";
     content?: string | ContentPart[] | null;
+    /** An assistant message's reasoning, as a reasoning model returned it. Sent back to DeepSeek only. */
+    reasoning_content?: string;
     tool_calls?: ToolCall[];
     tool_call_id?: string;
     name?: string;
@@ -174,8 +181,13 @@ interface CompletionResponse {
         message: {
             role: "assistant";
             content: string;
+            /**
+             * The model's reasoning, when the provider returned it (DeepSeek, Qwen), an empty string included.
+             * Keep it in the history: DeepSeek's thinking mode refuses a tool loop's next turn without it.
+             */
+            reasoning_content?: string;
             tool_calls?: ToolCall[];
-            model_dump: () => { role: "assistant"; content: string; tool_calls?: ToolCall[]; };
+            model_dump: () => { role: "assistant"; content: string; reasoning_content?: string; tool_calls?: ToolCall[]; };
         };
     }>;
     /** The provider SDK's own response. Not enumerable. */

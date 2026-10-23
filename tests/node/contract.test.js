@@ -6,7 +6,7 @@
  * real child process in tests/fixtures/fake_cli.js).
  *
  * Each check carries the number of the change that introduced the behaviour
- * (001-025, as carried by Ubinity Agent OS, which keeps the per-change
+ * (001-029, as carried by Ubinity Agent OS, which keeps the per-change
  * "fails before, passes after" proof). tests/node/sdk-conformance.test.js
  * checks the same library against the real SDKs.
  *
@@ -1191,6 +1191,79 @@ t('026', 'Gemini: the text parts are read directly, thoughts left out, the SDK\'
   const r = await call({ model: 'google/gemini-x' });
   return (r.choices[0].message.content === 'Let me look.' && !touched && r.choices[0].finish_reason === 'tool_calls')
     || { content: r.choices[0].message.content, touched };
+});
+
+// ------------------------------------------------- 027 Gemini thought signatures kept and sent back
+
+// As the real Gemini 3 answers a tool call (checked 2026-10-23): the signature
+// is on the part, and response.functionCalls does not carry it.
+const signedCall = () => ({ responseId: 'g', modelVersion: 'm', functionCalls: [{ name: 'lookup', args: { q: 1 } }],
+  candidates: [{ finishReason: 'STOP', content: { role: 'model', parts: [{ functionCall: { name: 'lookup', args: { q: 1 } },
+    thoughtSignature: 'sig-1' }] } }],
+  usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 } });
+t('027', 'Gemini: a call\'s thought signature is kept on the tool call, and goes back as the part\'s thoughtSignature', async () => {
+  fake.handler = (kind) => (kind === 'google' && fake.calls.length === 1 ? signedCall() : okResponse(kind));
+  const r = await call({ model: 'google/gemini-x' });
+  const msg = r.choices[0].message;
+  const tc = (msg.tool_calls || [])[0];
+  await call({ model: 'google/gemini-x', messages: [...USER, msg.model_dump(), { role: 'tool', tool_call_id: tc && tc.id, content: 'ok' }] });
+  const sent = fake.calls[1] && fake.calls[1].body.contents[1].parts[0];
+  return (tc && tc.extra_content && tc.extra_content.google.thought_signature === 'sig-1' && sent && sent.thoughtSignature === 'sig-1'
+    && sent.functionCall.name === 'lookup') || { tc, sent };
+});
+t('027', 'a signature kept for Gemini is not sent to an OpenAI-protocol provider, and the caller\'s message is left as it was', async () => {
+  const history = [...USER, { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function',
+    function: { name: 'lookup', arguments: '{}' }, extra_content: { google: { thought_signature: 'sig-1' } } }] },
+  { role: 'tool', tool_call_id: 'c1', content: 'ok' }];
+  await call({ model: 'openai/gpt-x', messages: history });
+  const sent = fake.calls[0].body.messages[1].tool_calls[0];
+  return (sent.extra_content === undefined && sent.id === 'c1' && history[1].tool_calls[0].extra_content.google.thought_signature === 'sig-1')
+    || { sent, kept: history[1].tool_calls[0] };
+});
+t('027', 'Gemini: a call with no arguments gets "{}", not undefined', async () => {
+  fake.handler = () => ({ responseId: 'g', modelVersion: 'm', functionCalls: [{ name: 'ping' }],
+    candidates: [{ finishReason: 'STOP', content: { role: 'model', parts: [{ functionCall: { name: 'ping' } }] } }],
+    usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 } });
+  const r = await call({ model: 'google/gemini-x' });
+  const tc = (r.choices[0].message.tool_calls || [])[0];
+  return (tc && tc.function.arguments === '{}' && tc.extra_content === undefined) || tc;
+});
+
+// ------------------------------------------------- 028 reasoning_content kept, and sent back to DeepSeek
+
+t('028', 'OpenAI protocol: a returned reasoning_content is kept on the message and in model_dump, an empty one included', async () => {
+  fake.handler = () => ({ id: 'x', model: 'm', choices: [{ index: 0, finish_reason: 'tool_calls', message: { role: 'assistant',
+    content: null, reasoning_content: '', tool_calls: [{ id: 't1', type: 'function', function: { name: 'lookup', arguments: '{}' } }] } }],
+  usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } });
+  const withIt = (await call({ model: 'deepseek/deepseek-chat' })).choices[0].message;
+  fake.handler = null;
+  const without = (await call({ model: 'deepseek/deepseek-chat' })).choices[0].message;
+  return (withIt.reasoning_content === '' && withIt.model_dump().reasoning_content === ''
+    && !('reasoning_content' in without) && !('reasoning_content' in without.model_dump())) || { withIt, without };
+});
+t('028', 'reasoning_content goes back to DeepSeek, and to no other OpenAI-protocol provider', async () => {
+  const history = [...USER, { role: 'assistant', content: '', reasoning_content: 'because', tool_calls: [{ id: 'c1', type: 'function',
+    function: { name: 'lookup', arguments: '{}' } }] }, { role: 'tool', tool_call_id: 'c1', content: 'ok' }];
+  await call({ model: 'deepseek/deepseek-chat', messages: history });
+  await call({ model: 'openai/gpt-x', messages: history });
+  await call({ model: 'qwen/qwen-max', messages: history });
+  const sent = fake.calls.map((c) => c.body.messages[1].reasoning_content);
+  return (sent[0] === 'because' && sent[1] === undefined && sent[2] === undefined && history[1].reasoning_content === 'because') || sent;
+});
+
+// ------------------------------------------------- 029 Gemini's invalid key is authentication
+
+// The real answer to a bad key (checked 2026-10-23): 400, the reason in the details.
+const badKey = () => Object.assign(new Error(JSON.stringify({ error: { code: 400, message: 'API key not valid. Please pass a valid API key.',
+  status: 'INVALID_ARGUMENT', details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID' }] } })), { status: 400 });
+t('029', 'Gemini: a 400 naming API_KEY_INVALID is authentication, not retried; any other 400 stays invalid_request', async () => {
+  fake.handler = () => { throw badKey(); };
+  const e = (await settles(call({ model: 'google/gemini-x', maxAttempts: 3, retryBaseMs: 1 }))).error;
+  const calls = fake.calls.length;
+  fake.handler = () => { throw Object.assign(new Error('{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"bad field"}}'), { status: 400 }); };
+  const other = (await settles(call({ model: 'google/gemini-x', maxAttempts: 1 }))).error;
+  return (e && e.code === 'authentication' && e.status === 400 && calls === 1 && other && other.code === 'invalid_request')
+    || { code: e && e.code, calls, other: other && other.code };
 });
 
 // ---------------------------------------------------------------- [contract]
