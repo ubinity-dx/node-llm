@@ -1,4 +1,4 @@
-# Universal LLM Routing Engine for Node.js
+# node-llm: one calling contract for every model provider
 
 This project implements a Universal LLM Routing Engine for Node.js, designed for efficient and lightweight management of Language Model (LLM) interactions within a Node.js environment. It focuses on minimizing overhead and providing a streamlined interface for integrating various LLMs.
 
@@ -17,13 +17,15 @@ This project implements a Universal LLM Routing Engine for Node.js, designed for
 npm install @ubinity/node-llm
 ```
 
-You also need to install the SDKs for the providers you intend to use (they are defined as optional peer dependencies):
+Requires Node.js 22 or later. Install the SDKs of the providers you call by API key (optional peer dependencies; 2.0.0 is checked against these majors by `tests/node/sdk-conformance.test.js`):
 
 ```bash
-npm install openai
-npm install @anthropic-ai/sdk
-npm install @google/genai
+npm install openai@^7.43.0             # OpenAI and OpenAI-compatible servers
+npm install @anthropic-ai/sdk@^1.1.0
+npm install @google/genai@^2.31.0      # Gemini API and Vertex AI
 ```
+
+Subscription calls need no SDK: they run the provider's own client (see *Subscriptions*). Upgrading from 1.x: see [CHANGELOG.md](CHANGELOG.md).
 
 ## The calling contract (version 1)
 

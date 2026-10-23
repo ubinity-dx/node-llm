@@ -1,16 +1,22 @@
 {
   "name": "@ubinity/node-llm",
-  "version": "1.0.0",
-  "description": "Universal LLM Routing Engine for Node.js",
+  "version": "2.0.0",
+  "description": "One calling contract for OpenAI and OpenAI-compatible servers, Anthropic and Gemini -- by API key or by subscription.",
   "author": "Ubinity DX Team <dx@ubinity.tech>",
   "license": "MPL-2.0",
   "keywords": [
     "llm",
     "ai",
     "openai",
-    "gemini",
     "anthropic",
-    "routing",
+    "gemini",
+    "claude",
+    "codex",
+    "antigravity",
+    "ollama",
+    "deepseek",
+    "qwen",
+    "subscription",
     "unified"
   ],
   "type": "commonjs",
@@ -34,18 +40,19 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "types": "index.d.ts",
   "files": [
     "lib",
     "index.js",
-    "index.d.ts"
+    "index.d.ts",
+    "CHANGELOG.md"
   ],
   "peerDependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
-    "@google/genai": "^0.1.0",
-    "openai": "^4.0.0"
+    "@anthropic-ai/sdk": "^1.1.0",
+    "@google/genai": "^2.31.0",
+    "openai": "^7.43.0"
   },
   "peerDependenciesMeta": {
     "openai": {
@@ -59,14 +66,23 @@
     }
   },
   "scripts": {
-    "test": "jest",
+    "test": "jest && node --test tests/node/contract.test.js tests/node/sdk-conformance.test.js",
     "prepublishOnly": "npm test"
   },
   "devDependencies": {
-    "jest": "^30.4.2"
+    "@anthropic-ai/sdk": "1.1.0",
+    "@google/genai": "2.31.0",
+    "jest": "^30.4.2",
+    "openai": "7.43.0"
   },
   "directories": {
     "lib": "lib",
     "test": "tests"
+  },
+  "jest": {
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/tests/node/"
+    ]
   }
 }
