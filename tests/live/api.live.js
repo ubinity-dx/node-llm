@@ -50,6 +50,10 @@ async function rejects(promise) {
 }
 const errorDetail = e => JSON.stringify(e ? { name: e.name, code: e.code, status: e.status, message: String(e.message).slice(0, 160) } : 'resolved');
 
+// Checks judged without a billed call: a bad key is refused before billing,
+// and effort is refused before any request.
+const NO_CALL_NEEDED = new Set(['a bad key is authentication, not retried', 'effort on an API call is refused before any request']);
+
 // DeepSeek's thinking mode refuses a forced tool_choice; with thinking off it
 // is honoured. The refusal itself is checked below.
 const FORCED = { deepseek: { thinking: { type: 'disabled' } } };
@@ -127,7 +131,8 @@ function checksFor(name, model, apiKey) {
                 { role: 'tool', tool_call_id: 'call_live_1', content: '{"temperature_c":23,"sky":"sunny"}' },
             ] }).then(r => { this.reply = r; }));
             if (!e) return [/23/.test(text(this.reply)), 'answered: ' + text(this.reply).slice(0, 60)];
-            return [e instanceof NodeLlmError && e.code === 'invalid_request' && e.retryable === false, 'refused: ' + errorDetail(e)];
+            return [e instanceof NodeLlmError && e.code === 'invalid_request' && e.retryable === false
+                && /signature|reasoning|tool/i.test(e.message), 'refused: ' + errorDetail(e)];
         },
         ...(name !== 'deepseek' ? {} : { async 'a forced tool_choice in DeepSeek thinking mode is refused as invalid_request'() {
             const e = await rejects(call({ tools: WEATHER, tool_choice: 'required', messages: [{ role: 'user', content: 'What is the weather in Paris?' }] }));
@@ -146,7 +151,8 @@ function checksFor(name, model, apiKey) {
             if (!e) return [/red/i.test(text(this.reply)), text(this.reply).slice(0, 40)];
             // A model without image input may refuse; the refusal must then be
             // a classified request error, not "unknown".
-            return [e instanceof NodeLlmError && e.code === 'invalid_request', 'refused: ' + errorDetail(e), 'refused'];
+            return [e instanceof NodeLlmError && e.code === 'invalid_request' && /image|vision|multimodal/i.test(e.message),
+                'refused: ' + errorDetail(e)];
         },
         async 'prompt cache: the second identical long prompt reports cached tokens inside prompt_tokens'() {
             const messages = [{ role: 'system', content: LONG_SYSTEM }, { role: 'user', content: 'What is item 3 coded? Number only.' }];
@@ -167,7 +173,8 @@ function checksFor(name, model, apiKey) {
         async 'an unknown model is not_found or invalid_request, not retried'() {
             const e = await rejects(completion({ model: `${name}/no-such-model-0`, apiKey, maxAttempts: 3, retryBaseMs: 10,
                 messages: [{ role: 'user', content: 'hi' }] }));
-            return [e instanceof NodeLlmError && ['not_found', 'invalid_request'].includes(e.code) && e.retryable === false, errorDetail(e)];
+            return [e instanceof NodeLlmError && ['not_found', 'invalid_request'].includes(e.code) && e.retryable === false
+                && /no-such-model-0|model/i.test(e.message), errorDetail(e)];
         },
         async 'timeout cuts the call off'() {
             const started = Date.now();
@@ -191,7 +198,19 @@ async function main() {
         const model = process.env[`LIVE_${name.toUpperCase()}_MODEL`] || p.model;
         console.log(`\n[${model}]`);
         if (!apiKey) { record(`${name}: every check`, 'untried', `${p.key} is not set`); continue; }
+        // One call first. An account that cannot be billed (no credit, no
+        // quota) refuses every call, and each check would then be judged on
+        // that refusal -- a lenient one would even pass. Only the checks that
+        // need no billed call run then; the rest are not tried, never passed.
+        let blocked = null;
+        try {
+            await completion({ model, apiKey, maxAttempts: 1, max_tokens: 16, messages: [{ role: 'user', content: 'Reply with: OK' }] });
+        } catch (e) { blocked = e; }
         for (const [check, run] of Object.entries(checksFor(name, model, apiKey))) {
+            if (blocked && !NO_CALL_NEEDED.has(check)) {
+                record(`${name}: ${check}`, 'untried', `the first call failed, so nothing billed could be judged: ${errorDetail(blocked)}`);
+                continue;
+            }
             try {
                 const [ok, detail] = await run.call({});
                 record(`${name}: ${check}`, ok === null ? 'untried' : ok ? 'confirmed' : 'contradicted', detail);
