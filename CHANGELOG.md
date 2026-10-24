@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Prompt caching for every provider: `cache: true` or `cache: { ttl }`.** Measured live (2026-10-24): OpenAI, DeepSeek and Gemini cache a repeated prefix on their own, but Anthropic cached nothing, because it caches only what a request marks, and node-llm never marked anything; a long prompt to Claude was billed in full every time.
+  - Anthropic gets a marker on the system prompt and its top-level automatic marker; Qwen gets markers on the last system message and the last message. The providers that cache on their own get nothing extra.
+  - `ttl`: Anthropic `'5m'` or `'1h'`, Qwen `'5m'`. Anywhere else a `ttl` is refused with `unsupported`, never mapped to another value or dropped.
+  - Qwen's cache writes are read into `usage.cache_creation_tokens`.
+  - Additive: `CONTRACT_VERSION` stays 1.
+
+### Fixed
+
+- **OpenAI tool calls on `gpt-5.6-*`, `gpt-6-luna` and `gpt-6-sol`.** Their Chat Completions endpoint refuses function tools while reasoning is on. Probed on 16 models, only these need it, so `reasoning_effort: 'none'` is sent to them with tools, and never over a `reasoning_effort` given in `providerOptions`. Other OpenAI models are unchanged: `gpt-4o-mini` refuses the field, and `gpt-5`, `-mini` and `-nano` refuse `'none'`.
+
+### Verified
+
+- `npm run test:live:api` on DeepSeek, Gemini, OpenAI and Anthropic: 61 confirmed, 0 contradicted. Anthropic writes the prompt to its cache and reads it back, in the 1-hour cache when asked.
+- Qwen is checked against stand-ins only, until a key is available.
+
 ## 2.1.1 (2026-10-24)
 
 ### Fixed

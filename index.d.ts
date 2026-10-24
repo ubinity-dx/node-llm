@@ -103,6 +103,15 @@ interface CompletionOptions {
      * Sent to OpenAI's own API as max_completion_tokens, which its current models require.
      */
     max_tokens?: number;
+    /**
+     * Ask for the prompt's prefix to be cached for the requests that follow.
+     * Anthropic and Qwen cache only what a request marks, so they get markers;
+     * OpenAI, DeepSeek, Gemini, Ollama and subscription clients cache on their
+     * own and get nothing extra. `ttl` is taken where the provider lets the
+     * caller choose (Anthropic "5m" or "1h", Qwen "5m") and refused elsewhere.
+     * Hits and writes appear in usage as cache_read_tokens and cache_creation_tokens.
+     */
+    cache?: boolean | { ttl?: string; };
     /** Optional for ollama, and for any call that names its own endpoint. */
     apiKey?: string;
     baseURL?: string;

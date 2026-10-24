@@ -68,16 +68,17 @@ const FORCED = { deepseek: { thinking: { type: 'disabled' } } };
 const TEMPERATURE_REFUSED = { 'openai/gpt-5.6-luna': 1, 'anthropic/claude-haiku-5-5': null };
 
 // Models whose Chat Completions endpoint refuses function tools while their
-// reasoning is on: gpt-5.6-luna answers "Function tools with reasoning_effort
-// are not supported ... set reasoning_effort to 'none'" (seen live
-// 2026-10-24). The tool checks pass that setting through providerOptions; the
-// refusal without it is checked on its own.
-const TOOLS_WITHOUT_REASONING = { 'openai/gpt-5.6-luna': { reasoning_effort: 'none' } };
+// reasoning is on (seen live 2026-10-24). node-llm sends reasoning_effort
+// 'none' with tools to them; asked for reasoning, they still refuse.
+const TOOLS_NEED_REASONING_OFF = new Set(['openai/gpt-5.6-luna']);
+
+// Providers that cache only what a request marks, so cache: true makes node-llm
+// send markers and a hit is expected rather than hoped for.
+const MARKED_CACHE = new Set(['anthropic', 'qwen', 'dashscope']);
 
 function checksFor(name, model, apiKey) {
     const call = opts => completion({ model, apiKey, maxAttempts: 1, ...opts });
-    const toolOptions = TOOLS_WITHOUT_REASONING[model] ? { providerOptions: TOOLS_WITHOUT_REASONING[model] } : {};
-    const forced = FORCED[name] ? { providerOptions: FORCED[name] } : toolOptions;
+    const forced = FORCED[name] ? { providerOptions: FORCED[name] } : {};
     const accepted = TEMPERATURE_REFUSED[model];
     return {
         async 'reply: text, provider, auth, usage, finish_reason, raw hidden'() {
@@ -152,16 +153,16 @@ function checksFor(name, model, apiKey) {
             // their reasoning back (DeepSeek's thinking mode) refuse the next
             // turn when the message lost what they gave.
             const messages = [{ role: 'user', content: 'What is the weather in Paris? Use the tool.' }];
-            const first = await call({ ...toolOptions, tools: WEATHER, messages });
+            const first = await call({ tools: WEATHER, messages });
             const msg = first.choices[0].message;
             const tc = (msg.tool_calls || [])[0];
             if (!tc) return [false, 'no tool call to answer: ' + JSON.stringify(msg).slice(0, 120)];
             messages.push(msg.model_dump(), { role: 'tool', tool_call_id: tc.id, content: '{"temperature_c":23,"sky":"sunny"}' });
-            const r = await call({ ...toolOptions, tools: WEATHER, messages });
+            const r = await call({ tools: WEATHER, messages });
             return [/23/.test(text(r)) && r.choices[0].finish_reason === 'stop', text(r).slice(0, 80)];
         },
         async 'the same loop with a call written by hand (no signature, no reasoning) is answered or refused as invalid_request'() {
-            const e = await rejects(call({ ...toolOptions, tools: WEATHER, messages: [
+            const e = await rejects(call({ tools: WEATHER, messages: [
                 { role: 'user', content: 'What is the weather in Paris?' },
                 { role: 'assistant', content: null, tool_calls: [{ id: 'call_live_1', type: 'function',
                     function: { name: 'get_weather', arguments: '{"city":"Paris"}' } }] },
@@ -171,8 +172,9 @@ function checksFor(name, model, apiKey) {
             return [e instanceof NodeLlmError && e.code === 'invalid_request' && e.retryable === false
                 && /signature|reasoning|tool/i.test(e.message), 'refused: ' + errorDetail(e)];
         },
-        ...(!TOOLS_WITHOUT_REASONING[model] ? {} : { async 'function tools with reasoning on are refused as invalid_request, not retried'() {
-            const e = await rejects(call({ tools: WEATHER, maxAttempts: 3, messages: [{ role: 'user', content: 'What is the weather in Paris? Use the tool.' }] }));
+        ...(!TOOLS_NEED_REASONING_OFF.has(model) ? {} : { async 'function tools with reasoning asked for are refused as invalid_request, not retried'() {
+            const e = await rejects(call({ tools: WEATHER, maxAttempts: 3, providerOptions: { reasoning_effort: 'low' },
+                messages: [{ role: 'user', content: 'What is the weather in Paris? Use the tool.' }] }));
             return [e instanceof NodeLlmError && e.code === 'invalid_request' && e.retryable === false && /reasoning_effort/.test(e.message),
                 errorDetail(e)];
         } }),
@@ -196,17 +198,30 @@ function checksFor(name, model, apiKey) {
             return [e instanceof NodeLlmError && e.code === 'invalid_request' && /image|vision|multimodal/i.test(e.message),
                 'refused: ' + errorDetail(e)];
         },
-        async 'prompt cache: the second identical long prompt reports cached tokens inside prompt_tokens'() {
-            const messages = [{ role: 'system', content: LONG_SYSTEM }, { role: 'user', content: 'What is item 3 coded? Number only.' }];
-            const first = await call({ messages });
+        async 'prompt cache (cache: true): the second identical long prompt reports cached tokens inside prompt_tokens'() {
+            // A session tag of its own, so an earlier run's cache cannot answer.
+            const tag = Math.random().toString(36).slice(2, 8);
+            const messages = [{ role: 'system', content: `${LONG_SYSTEM} Session ${tag}.` }, { role: 'user', content: 'What is item 3 coded? Number only.' }];
+            const first = await call({ messages, cache: true });
             await new Promise(res => setTimeout(res, 3000));
-            const second = await call({ messages });
+            const second = await call({ messages, cache: true });
             const u = second.usage || {};
             if (!(u.cache_read_tokens > 0)) {
-                return [null, `no cache hit observed (first ${JSON.stringify(first.usage)}, second ${JSON.stringify(u)})`];
+                // Where node-llm sent markers, a hit is the provider's promise;
+                // where the provider caches on its own, it is best effort.
+                const detail = `no cache hit (first ${JSON.stringify(first.usage)}, second ${JSON.stringify(u)})`;
+                return [MARKED_CACHE.has(name) ? false : null, detail];
             }
-            return [u.prompt_tokens >= u.cache_read_tokens && u.prompt_tokens > 1000, JSON.stringify(u)];
+            const wrote = !MARKED_CACHE.has(name) || first.usage.cache_creation_tokens > 0;
+            return [wrote && u.prompt_tokens >= u.cache_read_tokens && u.prompt_tokens > 1000, JSON.stringify({ first: first.usage, second: u })];
         },
+        ...(name !== 'anthropic' ? {} : { async 'cache ttl 1h writes to the 1-hour cache'() {
+            const tag = Math.random().toString(36).slice(2, 8);
+            const r = await call({ cache: { ttl: '1h' }, messages: [{ role: 'system', content: `${LONG_SYSTEM} Session ${tag}.` },
+                { role: 'user', content: 'What is item 3 coded? Number only.' }] });
+            const c = r.raw.usage && r.raw.usage.cache_creation;
+            return [c && c.ephemeral_1h_input_tokens > 0 && c.ephemeral_5m_input_tokens === 0, JSON.stringify(c)];
+        } }),
         async 'a bad key is authentication, not retried'() {
             const e = await rejects(completion({ model, apiKey: 'invalid-' + 'x'.repeat(30), maxAttempts: 3, retryBaseMs: 10,
                 messages: [{ role: 'user', content: 'hi' }] }));
