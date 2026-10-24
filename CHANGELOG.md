@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.1.1 (2026-10-24)
+
+### Fixed
+
+- **OpenAI: `max_tokens` is sent as `max_completion_tokens`.** Found against the real API with credit (2026-10-24): its current models refuse `max_tokens` with a 400, so every OpenAI call that set an output limit failed.
+  - OpenAI's own API gets `max_completion_tokens`, which all its models take. DeepSeek, Qwen, Ollama and self-hosted servers document `max_tokens` and keep it.
+  - On OpenAI the field is set only when a limit is given, so a caller already passing `max_completion_tokens` through `providerOptions` is not refused. Giving both is refused, as any field `completion()` sets itself.
+
+### Verified
+
+- OpenAI (`gpt-5.6-luna`) and Anthropic (`claude-haiku-5-5`) run for real for the first time: `npm run test:live:api` confirms 30 checks, contradicts none.
+- Two refusals by the providers are recorded, not worked around. node-llm passes the value as given and reports `invalid_request`, never retried:
+  - `temperature`: `gpt-5.6-luna` accepts only its default, 1; Claude Haiku 5.5 refuses the field outright, 1 included.
+  - Function tools on `gpt-5.6-luna` are refused on Chat Completions while its reasoning is on. Passing `providerOptions: { reasoning_effort: 'none' }` makes the whole tool loop work.
+- Not tried: Anthropic prompt caching. Anthropic caches only a request that carries `cache_control`, which `completion()` does not send.
+
 ## 2.1.0 (2026-10-23)
 
 ### Added

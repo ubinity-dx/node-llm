@@ -79,7 +79,10 @@ describe('openai SDK', () => {
     expect(seen[0].url).toBe('/v1/chat/completions');
     expect(seen[0].headers.authorization).toBe('Bearer synthetic-key');
     expect(b.model).toBe('gpt-x');
-    expect(b.max_tokens).toBe(50);
+    // OpenAI's own API takes the limit as max_completion_tokens; its current
+    // models refuse max_tokens with a 400.
+    expect(b.max_completion_tokens).toBe(50);
+    expect('max_tokens' in b).toBe(false);
     expect('temperature' in b).toBe(false);
     expect(r.choices[0].message.content).toBe('hello');
     expect(r.choices[0].finish_reason).toBe('stop');

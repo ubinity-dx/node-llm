@@ -58,9 +58,27 @@ const NO_CALL_NEEDED = new Set(['a bad key is authentication, not retried', 'eff
 // is honoured. The refusal itself is checked below.
 const FORCED = { deepseek: { thinking: { type: 'disabled' } } };
 
+// Models that refuse a sampling temperature, as seen live (2026-10-24): the
+// value they still accept, or null when they accept none. gpt-5.6-luna takes
+// only its default, 1 ("Only the default (1) value is supported"). Claude
+// Haiku 5.5 refuses the field outright, 1 included ("temperature: Extra
+// inputs are not permitted"), although Anthropic's migration notes say its
+// default is accepted. node-llm passes the value as given and reports the
+// refusal; it does not drop what the caller asked for.
+const TEMPERATURE_REFUSED = { 'openai/gpt-5.6-luna': 1, 'anthropic/claude-haiku-5-5': null };
+
+// Models whose Chat Completions endpoint refuses function tools while their
+// reasoning is on: gpt-5.6-luna answers "Function tools with reasoning_effort
+// are not supported ... set reasoning_effort to 'none'" (seen live
+// 2026-10-24). The tool checks pass that setting through providerOptions; the
+// refusal without it is checked on its own.
+const TOOLS_WITHOUT_REASONING = { 'openai/gpt-5.6-luna': { reasoning_effort: 'none' } };
+
 function checksFor(name, model, apiKey) {
     const call = opts => completion({ model, apiKey, maxAttempts: 1, ...opts });
-    const forced = FORCED[name] ? { providerOptions: FORCED[name] } : {};
+    const toolOptions = TOOLS_WITHOUT_REASONING[model] ? { providerOptions: TOOLS_WITHOUT_REASONING[model] } : {};
+    const forced = FORCED[name] ? { providerOptions: FORCED[name] } : toolOptions;
+    const accepted = TEMPERATURE_REFUSED[model];
     return {
         async 'reply: text, provider, auth, usage, finish_reason, raw hidden'() {
             const r = await call({ messages: [{ role: 'user', content: 'Reply with exactly the word PONG and nothing else.' }] });
@@ -80,10 +98,29 @@ function checksFor(name, model, apiKey) {
             ] });
             return [/KIWI/i.test(text(r)) && /MANGO/i.test(text(r)), text(r).slice(0, 60)];
         },
-        async 'temperature 0 is accepted'() {
-            const r = await call({ temperature: 0, messages: [{ role: 'user', content: 'Reply with exactly: OK' }] });
-            return [/OK/.test(text(r)), text(r).slice(0, 40)];
-        },
+        ...(accepted !== undefined ? {
+            async 'temperature 0 is refused by the provider as invalid_request, not retried'() {
+                const e = await rejects(call({ temperature: 0, maxAttempts: 3, messages: [{ role: 'user', content: 'Reply with exactly: OK' }] }));
+                return [e instanceof NodeLlmError && e.code === 'invalid_request' && e.retryable === false && /temperature/i.test(e.message),
+                    errorDetail(e)];
+            },
+            ...(accepted === null ? {
+                async 'temperature 1 is refused too: the field is not accepted at all'() {
+                    const e = await rejects(call({ temperature: 1, messages: [{ role: 'user', content: 'Reply with exactly: OK' }] }));
+                    return [e instanceof NodeLlmError && e.code === 'invalid_request' && /temperature/i.test(e.message), errorDetail(e)];
+                },
+            } : {
+                async 'temperature at the value it accepts is accepted'() {
+                    const r = await call({ temperature: accepted, messages: [{ role: 'user', content: 'Reply with exactly: OK' }] });
+                    return [/OK/.test(text(r)), text(r).slice(0, 40)];
+                },
+            }),
+        } : {
+            async 'temperature 0 is accepted'() {
+                const r = await call({ temperature: 0, messages: [{ role: 'user', content: 'Reply with exactly: OK' }] });
+                return [/OK/.test(text(r)), text(r).slice(0, 40)];
+            },
+        }),
         async 'tool call (tool_choice required): name, arguments, id, finish_reason, no console noise'() {
             // The Gemini SDK warns on the console when text is read from a reply
             // that also holds a function call; node-llm reads the parts itself.
@@ -115,16 +152,16 @@ function checksFor(name, model, apiKey) {
             // their reasoning back (DeepSeek's thinking mode) refuse the next
             // turn when the message lost what they gave.
             const messages = [{ role: 'user', content: 'What is the weather in Paris? Use the tool.' }];
-            const first = await call({ tools: WEATHER, messages });
+            const first = await call({ ...toolOptions, tools: WEATHER, messages });
             const msg = first.choices[0].message;
             const tc = (msg.tool_calls || [])[0];
             if (!tc) return [false, 'no tool call to answer: ' + JSON.stringify(msg).slice(0, 120)];
             messages.push(msg.model_dump(), { role: 'tool', tool_call_id: tc.id, content: '{"temperature_c":23,"sky":"sunny"}' });
-            const r = await call({ tools: WEATHER, messages });
+            const r = await call({ ...toolOptions, tools: WEATHER, messages });
             return [/23/.test(text(r)) && r.choices[0].finish_reason === 'stop', text(r).slice(0, 80)];
         },
         async 'the same loop with a call written by hand (no signature, no reasoning) is answered or refused as invalid_request'() {
-            const e = await rejects(call({ tools: WEATHER, messages: [
+            const e = await rejects(call({ ...toolOptions, tools: WEATHER, messages: [
                 { role: 'user', content: 'What is the weather in Paris?' },
                 { role: 'assistant', content: null, tool_calls: [{ id: 'call_live_1', type: 'function',
                     function: { name: 'get_weather', arguments: '{"city":"Paris"}' } }] },
@@ -134,6 +171,11 @@ function checksFor(name, model, apiKey) {
             return [e instanceof NodeLlmError && e.code === 'invalid_request' && e.retryable === false
                 && /signature|reasoning|tool/i.test(e.message), 'refused: ' + errorDetail(e)];
         },
+        ...(!TOOLS_WITHOUT_REASONING[model] ? {} : { async 'function tools with reasoning on are refused as invalid_request, not retried'() {
+            const e = await rejects(call({ tools: WEATHER, maxAttempts: 3, messages: [{ role: 'user', content: 'What is the weather in Paris? Use the tool.' }] }));
+            return [e instanceof NodeLlmError && e.code === 'invalid_request' && e.retryable === false && /reasoning_effort/.test(e.message),
+                errorDetail(e)];
+        } }),
         ...(name !== 'deepseek' ? {} : { async 'a forced tool_choice in DeepSeek thinking mode is refused as invalid_request'() {
             const e = await rejects(call({ tools: WEATHER, tool_choice: 'required', messages: [{ role: 'user', content: 'What is the weather in Paris?' }] }));
             return [e instanceof NodeLlmError && e.code === 'invalid_request' && e.status === 400, errorDetail(e)];

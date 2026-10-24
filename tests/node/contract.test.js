@@ -348,7 +348,9 @@ t('007', 'max_tokens reaches every provider', async () => {
   await call({ model: 'anthropic/claude-x', max_tokens: 1000 });
   await call({ model: 'google/gemini-x', max_tokens: 1000 });
   const [o, a, g] = fake.calls.map((c) => c.body);
-  return (o.max_tokens === 1000 && a.max_tokens === 1000 && g.config.maxOutputTokens === 1000) || [o.max_tokens, a.max_tokens, g.config];
+  // OpenAI's own API takes the limit as max_completion_tokens from 031 on.
+  const oLimit = o.max_tokens ?? o.max_completion_tokens;
+  return (oLimit === 1000 && a.max_tokens === 1000 && g.config.maxOutputTokens === 1000) || [oLimit, a.max_tokens, g.config];
 });
 t('007', 'without max_tokens, Anthropic keeps its 4096', async () => {
   await call({ model: 'anthropic/claude-x' });
@@ -1298,6 +1300,33 @@ t('030', 'an ordinary 429 is still rate_limit and retried, and an ordinary 400 s
   fake.handler = () => { throw Object.assign(new Error('400 {"error":{"message":"messages: field required"}}'), { status: 400 }); };
   const bad = (await settles(call({ model: 'anthropic/claude-x', maxAttempts: 1 }))).error;
   return (limited && limited.code === 'rate_limit' && tries === 2 && bad && bad.code === 'invalid_request') || [limited && limited.code, tries, bad && bad.code];
+});
+
+// ------------------------------------------- 031 OpenAI's own API takes max_completion_tokens
+
+// As the real API answered on gpt-5.6-luna (2026-10-24): every call that set a
+// limit was refused with a 400 naming the other field.
+t('031', 'OpenAI: the limit is sent as max_completion_tokens, and max_tokens is not sent', async () => {
+  await call({ model: 'openai/gpt-x', max_tokens: 1000 });
+  const b = fake.calls[0].body;
+  return (b.max_completion_tokens === 1000 && !('max_tokens' in b)) || b;
+});
+t('031', 'the OpenAI-compatible providers keep max_tokens, as they document it', async () => {
+  for (const model of ['deepseek/deepseek-chat', 'qwen/qwen-max', 'ollama/llama3.1']) await call({ model, max_tokens: 1000 });
+  const bodies = fake.calls.map((c) => c.body);
+  return bodies.every((b) => b.max_tokens === 1000 && !('max_completion_tokens' in b)) || bodies;
+});
+t('031', 'OpenAI without a limit sends neither, so max_completion_tokens through providerOptions still passes', async () => {
+  await call({ model: 'openai/gpt-x' });
+  await call({ model: 'openai/gpt-x', providerOptions: { max_completion_tokens: 50 } });
+  const [plain, viaOptions] = fake.calls.map((c) => c.body);
+  return (!('max_tokens' in plain) && !('max_completion_tokens' in plain) && viaOptions.max_completion_tokens === 50)
+    || [plain, viaOptions];
+});
+t('031', 'OpenAI with a limit and max_completion_tokens in providerOptions is refused, not overwritten', async () => {
+  const e = (await settles(call({ model: 'openai/gpt-x', max_tokens: 10, providerOptions: { max_completion_tokens: 50 } }))).error;
+  return (e && e.code === 'invalid_request' && /max_completion_tokens/.test(e.message) && fake.calls.length === 0)
+    || { code: e && e.code, calls: fake.calls.length };
 });
 
 // ---------------------------------------------------------------- [contract]

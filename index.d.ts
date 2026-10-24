@@ -98,7 +98,10 @@ interface CompletionOptions {
     tool_choice?: "auto" | "none" | "required" | { type: "function"; function: { name: string; }; };
     /** Not sent when absent: reasoning models accept only their default. */
     temperature?: number;
-    /** Output token limit. Anthropic defaults to 4096; the others to the provider's own. */
+    /**
+     * Output token limit. Anthropic defaults to 4096; the others to the provider's own.
+     * Sent to OpenAI's own API as max_completion_tokens, which its current models require.
+     */
     max_tokens?: number;
     /** Optional for ollama, and for any call that names its own endpoint. */
     apiKey?: string;
