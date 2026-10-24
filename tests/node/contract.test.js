@@ -38,6 +38,7 @@ class FakeOpenAI {
   constructor(opts) {
     this.opts = opts;
     this.chat = { completions: { create: async (body, ro) => record('openai', body, ro, this) } };
+    this.responses = { create: async (body, ro) => record('openai-responses', body, ro, this) };
   }
 }
 class FakeAnthropic {
@@ -67,6 +68,12 @@ Module._load = function load(request, ...rest) {
 };
 
 function okResponse(kind) {
+  if (kind === 'openai-responses') {
+    return { id: 'resp_1', model: 'gpt-6-astra', status: 'completed', incomplete_details: null,
+      output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] }],
+      usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15, input_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 },
+        output_tokens_details: { reasoning_tokens: 0 } } };
+  }
   if (kind === 'openai') {
     return {
       id: 'chatcmpl-1', model: 'gpt-x',
@@ -1414,6 +1421,50 @@ t('033', 'a reasoning_effort the caller gives in providerOptions is sent as give
 t('033', 'only OpenAI itself: a compatible provider with the same model name gets nothing', async () => {
   await call({ model: 'deepseek/gpt-5.6-luna', messages: TOOL_ASK, tools: TOOLS });
   return !('reasoning_effort' in fake.calls[0].body) || fake.calls[0].body;
+});
+
+// ---------------------------------------------- 034 OpenAI tools on the Responses API where only it takes them
+
+const LOOP = [{ role: 'system', content: 'Be terse.' }, { role: 'user', content: 'weather?' },
+  { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'lookup', arguments: '{"q":"x"}' } }] },
+  { role: 'tool', tool_call_id: 'call_1', content: '{"t":23}' }];
+t('034', 'gpt-6-astra and gpt-6.1-sol with tools go to the Responses API, the conversation translated item by item', async () => {
+  await call({ model: 'openai/gpt-6-astra', messages: LOOP, tools: TOOLS, max_tokens: 100 });
+  await call({ model: 'openai/gpt-6.1-sol', messages: LOOP, tools: TOOLS });
+  const [a, b] = fake.calls;
+  const i = a.body.input;
+  return (a.kind === 'openai-responses' && b.kind === 'openai-responses' && a.body.instructions === 'Be terse.'
+    && i[0].role === 'user' && i[1].type === 'function_call' && i[1].call_id === 'call_1' && i[2].type === 'function_call_output'
+    && i[2].call_id === 'call_1' && i[2].output === '{"t":23}' && a.body.tools[0].name === 'lookup' && a.body.tools[0].strict === false
+    && a.body.max_output_tokens === 100 && a.body.store === false) || fake.calls.map((c) => [c.kind, c.body]);
+});
+t('034', 'the reply comes back in the contract shape: a function call as a tool call, its call_id as the id', async () => {
+  fake.handler = () => ({ id: 'resp_2', model: 'gpt-6-astra', status: 'completed', output: [
+    { type: 'function_call', id: 'fc_1', call_id: 'call_9', name: 'lookup', arguments: '{"q":"y"}' }],
+  usage: { input_tokens: 20, output_tokens: 4, total_tokens: 24, input_tokens_details: { cached_tokens: 8, cache_write_tokens: 2 }, output_tokens_details: { reasoning_tokens: 1 } } });
+  const r = await call({ model: 'openai/gpt-6-astra', messages: USER, tools: TOOLS });
+  const m = r.choices[0].message;
+  return (r.choices[0].finish_reason === 'tool_calls' && m.tool_calls[0].id === 'call_9' && m.tool_calls[0].function.arguments === '{"q":"y"}'
+    && r.usage.cache_read_tokens === 8 && r.usage.cache_creation_tokens === 2 && r.usage.reasoning_tokens === 1 && typeof m.model_dump === 'function')
+    || { finish: r.choices[0].finish_reason, m, usage: r.usage };
+});
+t('034', 'a reply cut off by the output limit is length', async () => {
+  fake.handler = () => ({ id: 'r', model: 'gpt-6-astra', status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' }, output: [],
+    usage: { input_tokens: 5, output_tokens: 16, total_tokens: 21 } });
+  const r = await call({ model: 'openai/gpt-6-astra', messages: USER, tools: TOOLS, max_tokens: 16 });
+  return r.choices[0].finish_reason === 'length' || r.choices[0];
+});
+t('034', 'without tools, and on every other model, Chat Completions as before', async () => {
+  await call({ model: 'openai/gpt-6-astra', messages: USER });
+  await call({ model: 'openai/gpt-5.6-luna', messages: USER, tools: TOOLS });
+  await call({ model: 'openai/gpt-5.5', messages: USER, tools: TOOLS });
+  return fake.calls.every((c) => c.kind === 'openai') || fake.calls.map((c) => c.kind);
+});
+t('034', 'store and a named tool_choice: the caller store is sent as given, the choice in the Responses form', async () => {
+  await call({ model: 'openai/gpt-6-astra', messages: USER, tools: TOOLS, tool_choice: { type: 'function', function: { name: 'lookup' } },
+    providerOptions: { store: true } });
+  const b = fake.calls[0].body;
+  return (b.store === true && b.tool_choice.type === 'function' && b.tool_choice.name === 'lookup') || b;
 });
 
 // ---------------------------------------------------------------- [contract]

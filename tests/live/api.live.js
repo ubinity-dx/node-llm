@@ -65,7 +65,7 @@ const FORCED = { deepseek: { thinking: { type: 'disabled' } } };
 // inputs are not permitted"), although Anthropic's migration notes say its
 // default is accepted. node-llm passes the value as given and reports the
 // refusal; it does not drop what the caller asked for.
-const TEMPERATURE_REFUSED = { 'openai/gpt-5.6-luna': 1, 'anthropic/claude-haiku-5-5': null };
+const TEMPERATURE_REFUSED = { 'openai/gpt-5.6-luna': 1, 'openai/gpt-6-astra': 1, 'anthropic/claude-haiku-5-5': null };
 
 // Models whose Chat Completions endpoint refuses function tools while their
 // reasoning is on (seen live 2026-10-24). node-llm sends reasoning_effort

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **OpenAI tool calls on `gpt-6-astra` and `gpt-6.1-sol`.** Both refuse function tools on Chat Completions, with reasoning and with `reasoning_effort: 'none'` alike, and OpenAI names its Responses API as the way. A request with tools to them now goes there, translated both ways:
+  - system text becomes `instructions`; turns, earlier tool calls and tool results become input items, matched by `call_id`; tools are sent with `strict: false`, so a schema is taken as given;
+  - the reply comes back in the contract shape: `call_id` as the tool call id, `stop`, `tool_calls` or `length`, and usage with the cache reads and writes the API reports;
+  - `store: false` unless `providerOptions` passes `store`.
+  Everything else stays on Chat Completions.
+
+### Verified
+
+- `npm run test:live:api` with `LIVE_OPENAI_MODEL=openai/gpt-6-astra`: 15 confirmed, 0 contradicted; every tool check, the tool loop included, through the Responses API.
+
 ## 2.2.0 (2026-10-24)
 
 ### Added
