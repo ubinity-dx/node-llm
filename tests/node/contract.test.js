@@ -1329,6 +1329,93 @@ t('031', 'OpenAI with a limit and max_completion_tokens in providerOptions is re
     || { code: e && e.code, calls: fake.calls.length };
 });
 
+// ------------------------------------------------------- 032 one cache option for every provider
+
+const SYS = [{ role: 'system', content: 'A long shared policy.' }, { role: 'user', content: 'first' },
+  { role: 'assistant', content: 'ok' }, { role: 'user', content: 'second' }];
+const marked = (parts) => Array.isArray(parts) && parts.some((p) => p.cache_control && p.cache_control.type === 'ephemeral');
+t('032', 'Anthropic: the system prompt carries a marker and the request the top-level automatic one', async () => {
+  await call({ model: 'anthropic/claude-x', messages: SYS, cache: true });
+  const b = fake.calls[0].body;
+  return (Array.isArray(b.system) && b.system[0].text === 'A long shared policy.' && b.system[0].cache_control.type === 'ephemeral'
+    && !('ttl' in b.system[0].cache_control) && b.cache_control && b.cache_control.type === 'ephemeral') || { system: b.system, cc: b.cache_control };
+});
+t('032', 'Anthropic: a ttl of 1h is on both markers, the same, as Anthropic requires', async () => {
+  await call({ model: 'anthropic/claude-x', messages: SYS, cache: { ttl: '1h' } });
+  const b = fake.calls[0].body;
+  return (b.system[0].cache_control.ttl === '1h' && b.cache_control.ttl === '1h') || { system: b.system, cc: b.cache_control };
+});
+t('032', 'Anthropic without a system prompt gets the top-level marker alone', async () => {
+  await call({ model: 'anthropic/claude-x', cache: true });
+  const b = fake.calls[0].body;
+  return (b.system === undefined && b.cache_control && b.cache_control.type === 'ephemeral') || { system: b.system, cc: b.cache_control };
+});
+t('032', 'Qwen: the last system message and the last message carry a marker on their last text part, nothing else changes', async () => {
+  await call({ model: 'qwen/qwen-max', messages: SYS, cache: true });
+  const m = fake.calls[0].body.messages;
+  return (marked(m[0].content) && marked(m[3].content) && m[1].content === 'first' && m[2].content === 'ok'
+    && m[3].content[0].text === 'second' && !('cache_control' in fake.calls[0].body)) || m;
+});
+t('032', 'OpenAI and DeepSeek cache on their own: the request is exactly what it is without cache', async () => {
+  await call({ model: 'openai/gpt-x', messages: SYS, cache: true });
+  await call({ model: 'deepseek/deepseek-chat', messages: SYS, cache: true });
+  await call({ model: 'openai/gpt-x', messages: SYS });
+  await call({ model: 'deepseek/deepseek-chat', messages: SYS });
+  const [o, d, plainO, plainD] = fake.calls.map((c) => JSON.stringify(c.body));
+  return (o === plainO && d === plainD && !/cache_control/.test(o + d)) || { o, d };
+});
+t('032', 'Gemini caches on its own: nothing about caching is sent', async () => {
+  await call({ model: 'gemini/gemini-x', messages: SYS, cache: true });
+  return !/cache/i.test(JSON.stringify(fake.calls[0].body)) || fake.calls[0].body;
+});
+t('032', 'a ttl the provider does not take is refused before any call, never mapped or dropped', async () => {
+  const onOpenAI = (await settles(call({ model: 'openai/gpt-x', cache: { ttl: '24h' } }))).error;
+  const onClaude = (await settles(call({ model: 'anthropic/claude-x', cache: { ttl: '2h' } }))).error;
+  const onQwen = (await settles(call({ model: 'qwen/qwen-max', cache: { ttl: '1h' } }))).error;
+  return ([onOpenAI, onClaude, onQwen].every((e) => e && e.code === 'unsupported') && fake.calls.length === 0)
+    || [onOpenAI, onClaude, onQwen].map((e) => e && e.code);
+});
+t('032', 'a malformed cache option is invalid_request', async () => {
+  const a = (await settles(call({ model: 'anthropic/claude-x', cache: 'yes' }))).error;
+  const b = (await settles(call({ model: 'anthropic/claude-x', cache: { ttl: '5m', key: 'x' } }))).error;
+  return (a && a.code === 'invalid_request' && b && b.code === 'invalid_request' && fake.calls.length === 0) || [a && a.code, b && b.code];
+});
+t('032', 'cache and a cache_control of the caller\'s own in providerOptions are refused together, not overwritten', async () => {
+  const e = (await settles(call({ model: 'anthropic/claude-x', cache: true, providerOptions: { cache_control: { type: 'ephemeral' } } }))).error;
+  return (e && e.code === 'invalid_request' && /cache_control/.test(e.message)) || (e && e.code);
+});
+t('032', 'Qwen: a cache write and a cache hit are both read into usage', async () => {
+  fake.handler = () => ({ id: 'x', model: 'qwen-max', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: 'hi' } }],
+    usage: { prompt_tokens: 2000, completion_tokens: 5, total_tokens: 2005, prompt_tokens_details: { cached_tokens: 0, cache_creation_input_tokens: 1800 } } });
+  const u = (await call({ model: 'qwen/qwen-max', messages: SYS, cache: true })).usage;
+  return (u.cache_creation_tokens === 1800 && u.cache_read_tokens === 0) || u;
+});
+
+// ------------------------------------------- 033 OpenAI tools on models that need reasoning off
+
+const TOOL_ASK = [{ role: 'user', content: 'weather?' }];
+t('033', 'gpt-5.6 and gpt-6-luna/sol with tools: reasoning_effort none is sent', async () => {
+  for (const model of ['openai/gpt-5.6-luna', 'openai/gpt-5.6-sol-2026-09-01', 'openai/gpt-6-luna', 'openai/gpt-6-sol']) {
+    await call({ model, messages: TOOL_ASK, tools: TOOLS });
+  }
+  return fake.calls.every((c) => c.body.reasoning_effort === 'none') || fake.calls.map((c) => [c.body.model, c.body.reasoning_effort]);
+});
+t('033', 'the same models without tools, and the other OpenAI models with them, get nothing', async () => {
+  await call({ model: 'openai/gpt-5.6-luna', messages: TOOL_ASK });
+  for (const model of ['openai/gpt-4o-mini', 'openai/gpt-5-nano', 'openai/gpt-5.5', 'openai/gpt-6-astra', 'openai/gpt-6.1-sol']) {
+    await call({ model, messages: TOOL_ASK, tools: TOOLS });
+  }
+  return fake.calls.every((c) => !('reasoning_effort' in c.body)) || fake.calls.map((c) => [c.body.model, c.body.reasoning_effort]);
+});
+t('033', 'a reasoning_effort the caller gives in providerOptions is sent as given, not refused or replaced', async () => {
+  const r = await settles(call({ model: 'openai/gpt-5.6-luna', messages: TOOL_ASK, tools: TOOLS, providerOptions: { reasoning_effort: 'low' } }));
+  return (!r.error && fake.calls[0].body.reasoning_effort === 'low') || { error: r.error && r.error.code, sent: fake.calls[0] && fake.calls[0].body.reasoning_effort };
+});
+t('033', 'only OpenAI itself: a compatible provider with the same model name gets nothing', async () => {
+  await call({ model: 'deepseek/gpt-5.6-luna', messages: TOOL_ASK, tools: TOOLS });
+  return !('reasoning_effort' in fake.calls[0].body) || fake.calls[0].body;
+});
+
 // ---------------------------------------------------------------- [contract]
 
 /*

@@ -104,7 +104,8 @@ The core function to interact with LLMs. It standardizes the input and output fo
 *   `tools` (Array) *Optional*: An array of tool definitions for function calling.
 *   `tool_choice` (string | Object) *Optional*: `"auto"`, `"none"`, `"required"`, or `{ type: "function", function: { name } }`. Translated for Anthropic and Gemini; a form that cannot be translated is refused.
 *   `temperature` (number) *Optional*: Controls randomness. Not sent when omitted, so the provider's default applies (reasoning models accept only their default).
-*   `max_tokens` (number) *Optional*: Output token limit, for every provider. Anthropic defaults to `4096`; the others to the provider's own default.
+*   `max_tokens` (number) *Optional*: Output token limit, for every provider. Anthropic defaults to `4096`; the others to the provider's own default. OpenAI's own API receives it as `max_completion_tokens`, which its current models require.
+*   `cache` (`true` or `{ ttl }`) *Optional*: Cache the prompt's prefix for the requests that follow. Anthropic and Qwen cache only what a request marks, so they get markers: Anthropic on the system prompt plus its top-level automatic marker, Qwen on the last system message and the last message. OpenAI, DeepSeek, Gemini, Ollama and subscription clients cache on their own and get nothing extra. `ttl` is taken where the provider lets the caller choose (Anthropic `'5m'` or `'1h'`, Qwen `'5m'`) and refused with `unsupported` elsewhere. Hits and writes appear in `usage` as `cache_read_tokens` and `cache_creation_tokens`.
 *   `providerOptions` (Object) *Optional*: Further provider request fields (e.g. `top_p`, `thinking`, `max_completion_tokens`), passed through as given. A field the options above already set is refused.
 *   `client` (Object) *Optional*: A ready SDK client for the provider (your own HTTP agent, proxy, or a test double). The internal client registry is then not used.
 *   `signal` (AbortSignal) *Optional*: Cancels the call, retries and waits included.
@@ -286,6 +287,8 @@ const next = await completion({ model, apiKey, messages, tools: [getWeatherTool]
 ### 4. OpenAI-Compatible Servers (DeepSeek / Qwen / Ollama / self-hosted)
 
 DeepSeek, Qwen and Ollama have default endpoints; any other OpenAI-compatible server is reached by naming its `baseURL`.
+
+On OpenAI, `gpt-5.6-*`, `gpt-6-luna` and `gpt-6-sol` refuse function tools on Chat Completions while their reasoning is on, so node-llm sends `reasoning_effort: 'none'` with tools to those models, unless `providerOptions` gives a `reasoning_effort` of its own. `gpt-6-astra` and `gpt-6.1-sol` refuse tools on Chat Completions either way (OpenAI points to its Responses API).
 
 DeepSeek's thinking mode refuses a forced `tool_choice` (`'required'`, or one named function) with a 400 (`invalid_request`). To force a call, turn thinking off for that request: `providerOptions: { thinking: { type: 'disabled' } }`.
 
