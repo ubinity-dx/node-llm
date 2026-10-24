@@ -288,7 +288,7 @@ const next = await completion({ model, apiKey, messages, tools: [getWeatherTool]
 
 DeepSeek, Qwen and Ollama have default endpoints; any other OpenAI-compatible server is reached by naming its `baseURL`.
 
-On OpenAI, `gpt-5.6-*`, `gpt-6-luna` and `gpt-6-sol` refuse function tools on Chat Completions while their reasoning is on, so node-llm sends `reasoning_effort: 'none'` with tools to those models, unless `providerOptions` gives a `reasoning_effort` of its own. `gpt-6-astra` and `gpt-6.1-sol` refuse tools on Chat Completions either way (OpenAI points to its Responses API).
+On OpenAI, `gpt-5.6-*`, `gpt-6-luna` and `gpt-6-sol` refuse function tools on Chat Completions while their reasoning is on, so node-llm sends `reasoning_effort: 'none'` with tools to those models, unless `providerOptions` gives a `reasoning_effort` of its own. `gpt-6-astra` and `gpt-6.1-sol` refuse tools on Chat Completions either way, so a request with tools to them goes to OpenAI's Responses API, translated both ways: the same messages in, the same reply shape out. Nothing is stored on OpenAI's side (`store: false`) unless `providerOptions` passes `store`.
 
 DeepSeek's thinking mode refuses a forced `tool_choice` (`'required'`, or one named function) with a 400 (`invalid_request`). To force a call, turn thinking off for that request: `providerOptions: { thinking: { type: 'disabled' } }`.
 
