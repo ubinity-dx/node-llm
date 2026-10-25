@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **An Antigravity reply with no answer after a refused action is an error.** The Antigravity CLI is an agent: given code, a model may try to run or open it, the sandbox refuses, and the turn can end there, reported as `SUCCESS` with an empty response and the refusal in `denied_actions` (seen with `gemini-4-argon`, reviewing a diff). That was returned as an empty answer. It is now a `permission` error naming what was refused. A reply that has an answer despite a refused action, or an empty reply with nothing refused, is passed on as before.
+
 ## 2.3.0 (2026-10-24)
 
 ### Fixed
