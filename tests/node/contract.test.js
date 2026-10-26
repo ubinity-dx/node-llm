@@ -979,6 +979,18 @@ t('021', 'Antigravity CLI: thinking is reasoning within the output; a failed sta
   const e = (await settles(sub({ model: 'gemini/gemini-x', client: runner(quota) }))).error;
   return (u.completion_tokens === 60 && u.reasoning_tokens === 40 && u.total_tokens === 7055 && e && e.code === 'rate_limit') || [u, e && e.code];
 });
+t('035', 'Antigravity CLI: no answer after a refused action is an error naming it, not an empty reply', async () => {
+  const out = (doc) => () => ({ code: 0, stderr: '', stdout: JSON.stringify({ status: 'SUCCESS', conversation_id: 'c', num_turns: 1,
+    usage: { input_tokens: 17324, output_tokens: 158, thinking_tokens: 0, total_tokens: 17482 }, ...doc }) });
+  const e = (await settles(sub({ model: 'gemini/gemini-x', client: runner(out({ response: '',
+    denied_actions: [{ action: 'command', display_name: 'RunCommand' }] })) }))).error;
+  // An answer given despite a refused action is still the answer; an empty
+  // answer with nothing refused is passed on as the model's.
+  const kept = await sub({ model: 'gemini/gemini-x', client: runner(out({ response: '[]', denied_actions: [{ action: 'command' }] })) });
+  const empty = await sub({ model: 'gemini/gemini-x', client: runner(out({ response: '' })) });
+  return (e && e.code === 'permission' && /RunCommand/.test(e.message) && kept.choices[0].message.content === '[]'
+    && empty.choices[0].message.content === '') || [e && e.code, e && e.message];
+});
 t('021', 'Antigravity CLI: a request longer than one argument may be is refused before it starts', async () => {
   const run = runner();
   const r = await settles(sub({ model: 'gemini/gemini-x', client: run, messages: [{ role: 'user', content: 'x'.repeat(40000) }] }));
